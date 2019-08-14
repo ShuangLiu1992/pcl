@@ -653,6 +653,7 @@ struct KinFuApp
   void
   initRegistration ()
   {
+    registration_ = true;
     if (registration_)
       kinfu_.setDepthIntrinsics(KINFU_DEFAULT_RGB_FOCAL_X, KINFU_DEFAULT_RGB_FOCAL_Y);
   }
@@ -946,7 +947,7 @@ struct KinFuApp
 
       int currentIndex = 0;
 
-      while (evaluation_ptr_->grab (currentIndex, depth_)) {
+      while (evaluation_ptr_->grab (currentIndex, depth_, rgb24_)) {
 
         execute(depth_, rgb24_, true);
         scene_cloud_view_.cloud_viewer_->spinOnce (3);

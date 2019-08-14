@@ -245,7 +245,7 @@ bool Evaluation::grab (double stamp, PtrStepSz<const unsigned short>& depth, Ptr
   rgb24.data = impl_->rgb_buffer.ptr<RGB>();
   rgb24.cols = impl_->rgb_buffer.cols;
   rgb24.rows = impl_->rgb_buffer.rows;
-  rgb24.step = impl_->rgb_buffer.cols*sizeof(unsigned char);
+  rgb24.step = impl_->rgb_buffer.step1();
 
   return true;  
 }

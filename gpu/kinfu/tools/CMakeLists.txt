@@ -27,6 +27,7 @@ target_link_libraries("${the_target}" pcl_common pcl_io ${OPENNI_LIBRARIES} pcl_
 
 find_package(OpenCV REQUIRED)
 if(OpenCV_FOUND)
+  message(STATUS "OPENCV FONUD")
   target_link_libraries("${the_target}" ${OpenCV_LIBS})
   target_compile_definitions("${the_target}" PRIVATE -DHAVE_OPENCV)
 endif()
