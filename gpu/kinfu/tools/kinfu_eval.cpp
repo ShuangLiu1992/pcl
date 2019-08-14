@@ -1,4 +1,3 @@
-#include <functional>
 #include <iostream>
 #include <vector>
 
@@ -30,8 +29,6 @@
 
 #include "tsdf_volume.h"
 #include "tsdf_volume.hpp"
-
-#include "camera_pose.h"
 
 #include <opencv2/imgproc/imgproc.hpp>
 using ScopeTimeT = pcl::ScopeTime;
@@ -587,8 +584,8 @@ struct KinFuApp
 {
   enum { PCD_BIN = 1, PCD_ASCII = 2, PLY = 3, MESH_PLY = 7, MESH_VTK = 8 };
 
-  KinFuApp(float vsz, int icp, int viz, boost::shared_ptr<CameraPoseProcessor> pose_processor=boost::shared_ptr<CameraPoseProcessor> () ) : exit_ (false), scan_ (false), scan_mesh_(false), scan_volume_ (false), independent_camera_ (false),
-      registration_ (false), integrate_colors_ (false), focal_length_(-1.f), scene_cloud_view_(viz), image_view_(viz), time_ms_(0), icp_(icp), viz_(viz), pose_processor_ (pose_processor)
+  KinFuApp(float vsz, int icp, int viz) : exit_ (false), scan_ (false), scan_mesh_(false), scan_volume_ (false), independent_camera_ (false),
+      registration_ (false), integrate_colors_ (false), focal_length_(-1.f), scene_cloud_view_(viz), image_view_(viz), time_ms_(0), icp_(icp), viz_(viz)
   {
     //Init Kinfu Tracker
     Eigen::Vector3f volume_size = Vector3f::Constant (vsz/*meters*/);
@@ -705,12 +702,6 @@ struct KinFuApp
           has_image = kinfu_ (depth_device_, image_view_.colors_device_);
         else
           has_image = kinfu_ (depth_device_);
-      }
-
-      // process camera pose
-      if (pose_processor_)
-      {
-        pose_processor_->processPose (kinfu_.getCameraPose ());
       }
 
       image_view_.showDepth (depth);
@@ -888,8 +879,6 @@ struct KinFuApp
   int time_ms_;
   int icp_, viz_;
 
-  boost::shared_ptr<CameraPoseProcessor> pose_processor_;
-
   /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   static void
   keyboard_callback (const visualization::KeyboardEvent &e, void *cookie)
@@ -998,14 +987,7 @@ main (int argc, char* argv[])
   pc::parse_argument (argc, argv, "--icp", icp);
   pc::parse_argument (argc, argv, "--viz", visualization);
 
-  std::string camera_pose_file;
-  boost::shared_ptr<CameraPoseProcessor> pose_processor;
-  if (pc::parse_argument (argc, argv, "-save_pose", camera_pose_file) && !camera_pose_file.empty ())
-  {
-    pose_processor.reset (new CameraPoseWriter (camera_pose_file));
-  }
-
-  KinFuApp app (volume_size, icp, visualization, pose_processor);
+  KinFuApp app (volume_size, icp, visualization);
 
   if (pc::find_switch (argc, argv, "--current-cloud") || pc::find_switch (argc, argv, "-cc"))
     app.initCurrentFrameView ();
