@@ -1,8 +1,6 @@
 #include <iostream>
 #include <vector>
 
-#include <pcl/console/parse.h>
-
 #include <boost/filesystem.hpp>
 
 #include <pcl/gpu/kinfu/kinfu.h>
@@ -18,11 +16,7 @@
 #include <pcl/point_types.h>
 #include <pcl/visualization/image_viewer.h>
 #include <pcl/visualization/pcl_visualizer.h>
-#include <pcl/io/pcd_io.h>
 #include <pcl/io/ply_io.h>
-#include <pcl/io/vtk_io.h>
-#include <pcl/io/oni_grabber.h>
-#include <pcl/io/pcd_grabber.h>
 #include <pcl/exceptions.h>
 
 #include <pcl/visualization/point_cloud_color_handlers.h>
@@ -614,10 +608,6 @@ struct KinFuApp
 
     if (viz_)
     {
-        scene_cloud_view_.cloud_viewer_->registerKeyboardCallback (keyboard_callback, (void*)this);
-        image_view_.viewerScene_->registerKeyboardCallback (keyboard_callback, (void*)this);
-        image_view_.viewerDepth_->registerKeyboardCallback (keyboard_callback, (void*)this);
-
         scene_cloud_view_.toggleCube(volume_size);
     }
   }
@@ -632,7 +622,6 @@ struct KinFuApp
   initCurrentFrameView ()
   {
     current_frame_cloud_view_ = boost::shared_ptr<CurrentFrameCloudView>(new CurrentFrameCloudView ());
-    current_frame_cloud_view_->cloud_viewer_.registerKeyboardCallback (keyboard_callback, (void*)this);
     current_frame_cloud_view_->setViewerPose (kinfu_.getCameraPose ());
   }
 
@@ -931,7 +920,6 @@ struct KinFuApp
   Evaluation::Ptr evaluation_ptr_;
 
   std::mutex data_ready_mutex_;
-  std::condition_variable data_ready_cond_;
 
   std::vector<KinfuTracker::PixelRGB> source_image_data_;
   std::vector<unsigned short> source_depth_data_;
@@ -941,68 +929,14 @@ struct KinFuApp
   int time_ms_;
   int icp_, viz_;
 
-  /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-  static void
-  keyboard_callback (const visualization::KeyboardEvent &e, void *cookie)
-  {
-    KinFuApp* app = reinterpret_cast<KinFuApp*> (cookie);
-
-    int key = e.getKeyCode ();
-
-    if (e.keyUp ())
-      switch (key)
-      {
-      case 27: app->exit_ = true; break;
-      case (int)'t': case (int)'T': app->scan_ = true; break;
-      case (int)'a': case (int)'A': app->scan_mesh_ = true; break;
-      case (int)'h': case (int)'H': app->printHelp (); break;
-      case (int)'m': case (int)'M': app->scene_cloud_view_.toggleExtractionMode (); break;
-      case (int)'n': case (int)'N': app->scene_cloud_view_.toggleNormals (); break;
-      case (int)'c': case (int)'C': app->scene_cloud_view_.clearClouds (true); break;
-      case (int)'b': case (int)'B': app->scene_cloud_view_.toggleCube(app->kinfu_.volume().getSize()); break;
-      case (int)'7': case (int)'8': app->writeMesh (key - (int)'0'); break;
-      case (int)'1': case (int)'2': case (int)'3': app->writeCloud (key - (int)'0'); break;
-      case '*': app->image_view_.toggleImagePaint (); break;
-
-      case (int)'x': case (int)'X':
-        app->scan_volume_ = !app->scan_volume_;
-        cout << endl << "Volume scan: " << (app->scan_volume_ ? "enabled" : "disabled") << endl << endl;
-        break;
-      case (int)'v': case (int)'V':
-        cout << "Saving TSDF volume to tsdf_volume.dat ... " << flush;
-        app->tsdf_volume_.save ("tsdf_volume.dat", true);
-        cout << "done [" << app->tsdf_volume_.size () << " voxels]" << endl;
-        cout << "done [" << app->tsdf_cloud_ptr_->size () << " points]" << endl;
-        break;
-
-      default:
-        break;
-      }
-  }
 };
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 template<typename CloudPtr> void
 writeCloudFile (int format, const CloudPtr& cloud_prt)
 {
-  if (format == KinFuApp::PCD_BIN)
-  {
-    cout << "Saving point cloud to 'cloud_bin.pcd' (binary)... " << flush;
-    pcl::io::savePCDFile ("cloud_bin.pcd", *cloud_prt, true);
-  }
-  else
-  if (format == KinFuApp::PCD_ASCII)
-  {
-    cout << "Saving point cloud to 'cloud.pcd' (ASCII)... " << flush;
-    pcl::io::savePCDFile ("cloud.pcd", *cloud_prt, false);
-  }
-  else   /* if (format == KinFuApp::PLY) */
-  {
     cout << "Saving point cloud to 'cloud.ply' (ASCII)... " << flush;
     pcl::io::savePLYFileASCII ("cloud.ply", *cloud_prt);
-
-  }
-  cout << "Done" << endl;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1010,17 +944,8 @@ writeCloudFile (int format, const CloudPtr& cloud_prt)
 void
 writePolygonMeshFile (int format, const pcl::PolygonMesh& mesh)
 {
-  if (format == KinFuApp::MESH_PLY)
-  {
     cout << "Saving mesh to to 'mesh.ply'... " << flush;
     pcl::io::savePLYFile("mesh.ply", mesh);
-  }
-  else /* if (format == KinFuApp::MESH_VTK) */
-  {
-    cout << "Saving mesh to to 'mesh.vtk'... " << flush;
-    pcl::io::saveVTKFile("mesh.vtk", mesh);
-  }
-  cout << "Done" << endl;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1030,45 +955,19 @@ main (int argc, char* argv[])
 {
 
   int device = 0;
-  pc::parse_argument (argc, argv, "-gpu", device);
   pcl::gpu::setDevice (device);
   pcl::gpu::printShortCudaDeviceInfo (device);
 
-//  if (checkIfPreFermiGPU(device))
-//    return cout << endl << "Kinfu is supported only for Fermi and Kepler arhitectures. It is not even compiled for pre-Fermi by default. Exiting..." << endl, 1;
-
-  boost::shared_ptr<pcl::Grabber> capture;
 
   bool triggered_capture = false;
 
   float volume_size = 3.f;
-  pc::parse_argument (argc, argv, "-volume_size", volume_size);
+
 
   int icp = 1, visualization = 1;
   std::vector<float> depth_intrinsics;
-  pc::parse_argument (argc, argv, "--icp", icp);
-  pc::parse_argument (argc, argv, "--viz", visualization);
 
   KinFuApp app (volume_size, icp, visualization);
-
-  if (pc::find_switch (argc, argv, "--current-cloud") || pc::find_switch (argc, argv, "-cc"))
-    app.initCurrentFrameView ();
-
-  if (pc::find_switch (argc, argv, "--integrate-colors") || pc::find_switch (argc, argv, "-ic"))
-    app.toggleColorIntegration();
-
-  if (pc::parse_x_arguments (argc, argv, "--depth-intrinsics", depth_intrinsics) > 0)
-  {
-    if ((depth_intrinsics.size() == 4) || (depth_intrinsics.size() == 2))
-    {
-       app.setDepthIntrinsics(depth_intrinsics);
-    }
-    else
-    {
-        pc::print_error("Depth intrinsics must be given on the form fx,fy[,cx,cy].\n");
-        return -1;
-    }
-  }
 
   app.toggleEvaluationMode("/home/sliu/data/fusion/rgbd_dataset_freiburg1_xyz/", "matches.txt");
   app.initRegistration();
