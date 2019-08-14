@@ -912,33 +912,6 @@ struct KinFuApp
   void
   startMainLoop (bool triggered_capture)
   {
-    using namespace openni_wrapper;
-    using DepthImagePtr = boost::shared_ptr<DepthImage>;
-    using ImagePtr = boost::shared_ptr<Image>;
-
-    std::function<void (const ImagePtr&, const DepthImagePtr&, float)> func1_dev = [this] (const ImagePtr& img, const DepthImagePtr& depth, float constant)
-    {
-      source_cb2_device (img, depth, constant);
-    };
-    std::function<void (const DepthImagePtr&)> func2_dev = [this] (const DepthImagePtr& depth) { source_cb1_device (depth); };
-
-    std::function<void (const ImagePtr&, const DepthImagePtr&, float)> func1_oni = [this] (const ImagePtr& img, const DepthImagePtr& depth, float constant)
-    {
-      source_cb2_oni (img, depth, constant);
-    };
-    std::function<void (const DepthImagePtr&)> func2_oni = [this] (const DepthImagePtr& depth) { source_cb1_oni (depth); };
-
-    bool is_oni = false;
-    std::function<void (const ImagePtr&, const DepthImagePtr&, float constant)> func1 = is_oni ? func1_oni : func1_dev;
-    std::function<void (const DepthImagePtr&)> func2 = is_oni ? func2_oni : func2_dev;
-
-    std::function<void (const pcl::PointCloud<pcl::PointXYZRGBA>::ConstPtr&) > func3 = [this] (const pcl::PointCloud<pcl::PointXYZRGBA>::ConstPtr& cloud)
-    {
-      source_cb3 (cloud);
-    };
-
-    bool need_colors = integrate_colors_ || registration_;
-
     {
       std::unique_lock<std::mutex> lock(data_ready_mutex_);
 
