@@ -304,7 +304,7 @@ struct CurrentFrameCloudView
 
 struct ImageView
 {
-  ImageView(int viz) : viz_(viz), paint_image_ (false), accumulate_views_ (false)
+  ImageView(int viz) : viz_(viz), paint_image_ (false)
   {
     if (viz_)
     {
@@ -343,15 +343,6 @@ struct ImageView
         viewerScene_->showRGBImage (reinterpret_cast<unsigned char*> (&view_host_[0]), view_device_.cols (), view_device_.rows (), "rgb_image");
 
     //viewerColor_.showRGBImage ((unsigned char*)&rgb24.data, rgb24.cols, rgb24.rows);
-
-#ifdef HAVE_OPENCV
-    if (accumulate_views_)
-    {
-      views_.push_back (cv::Mat ());
-      cv::cvtColor (cv::Mat (480, 640, CV_8UC3, (void*)&view_host_[0]), views_.back (), cv::COLOR_RGB2GRAY);
-      //cv::copy(cv::Mat(480, 640, CV_8UC3, (void*)&view_host_[0]), views_.back());
-    }
-#endif
   }
 
   void
@@ -384,7 +375,6 @@ struct ImageView
 
   int viz_;
   bool paint_image_;
-  bool accumulate_views_;
 
   visualization::ImageViewer::Ptr viewerScene_;
   visualization::ImageViewer::Ptr viewerDepth_;
@@ -397,10 +387,6 @@ struct ImageView
   RayCaster::Ptr raycaster_ptr_;
 
   KinfuTracker::DepthMap generated_depth_;
-
-#ifdef HAVE_OPENCV
-  std::vector<cv::Mat> views_;
-#endif
 };
 
 
@@ -690,19 +676,6 @@ struct KinFuApp
   }
 
   void
-  enableTruncationScaling()
-  {
-    kinfu_.volume().setTsdfTruncDist (kinfu_.volume().getSize()(0) / 100.0f);
-  }
-
-  void
-  toggleIndependentCamera()
-  {
-    independent_camera_ = !independent_camera_;
-    cout << "Camera mode: " << (independent_camera_ ?  "Independent" : "Bound to Kinect pose") << endl;
-  }
-
-  void
   toggleEvaluationMode(const string& eval_folder, const string& match_file = string())
   {
     evaluation_ptr_ = Evaluation::Ptr( new Evaluation(eval_folder) );
@@ -781,131 +754,6 @@ struct KinFuApp
 
     if (viz_ && !independent_camera_)
       setViewerPose (*scene_cloud_view_.cloud_viewer_, kinfu_.getCameraPose());
-  }
-
-  void source_cb1_device(const boost::shared_ptr<openni_wrapper::DepthImage>& depth_wrapper)
-  {
-    {
-      std::unique_lock<std::mutex> lock (data_ready_mutex_, std::try_to_lock);
-      if (exit_ || !lock)
-          return;
-
-      depth_.cols = depth_wrapper->getWidth();
-      depth_.rows = depth_wrapper->getHeight();
-      depth_.step = depth_.cols * depth_.elemSize();
-
-      source_depth_data_.resize(depth_.cols * depth_.rows);
-      depth_wrapper->fillDepthImageRaw(depth_.cols, depth_.rows, &source_depth_data_[0]);
-      depth_.data = &source_depth_data_[0];
-    }
-    data_ready_cond_.notify_one();
-  }
-
-  void source_cb2_device(const boost::shared_ptr<openni_wrapper::Image>& image_wrapper, const boost::shared_ptr<openni_wrapper::DepthImage>& depth_wrapper, float)
-  {
-    {
-      std::unique_lock<std::mutex> lock (data_ready_mutex_, std::try_to_lock);
-      if (exit_ || !lock)
-          return;
-
-      depth_.cols = depth_wrapper->getWidth();
-      depth_.rows = depth_wrapper->getHeight();
-      depth_.step = depth_.cols * depth_.elemSize();
-
-      source_depth_data_.resize(depth_.cols * depth_.rows);
-      depth_wrapper->fillDepthImageRaw(depth_.cols, depth_.rows, &source_depth_data_[0]);
-      depth_.data = &source_depth_data_[0];
-
-      rgb24_.cols = image_wrapper->getWidth();
-      rgb24_.rows = image_wrapper->getHeight();
-      rgb24_.step = rgb24_.cols * rgb24_.elemSize();
-
-      source_image_data_.resize(rgb24_.cols * rgb24_.rows);
-      image_wrapper->fillRGB(rgb24_.cols, rgb24_.rows, (unsigned char*)&source_image_data_[0]);
-      rgb24_.data = &source_image_data_[0];
-    }
-    data_ready_cond_.notify_one();
-  }
-
-
-   void source_cb1_oni(const boost::shared_ptr<openni_wrapper::DepthImage>& depth_wrapper)
-  {
-    {
-      std::lock_guard<std::mutex> lock(data_ready_mutex_);
-      if (exit_)
-          return;
-
-      depth_.cols = depth_wrapper->getWidth();
-      depth_.rows = depth_wrapper->getHeight();
-      depth_.step = depth_.cols * depth_.elemSize();
-
-      source_depth_data_.resize(depth_.cols * depth_.rows);
-      depth_wrapper->fillDepthImageRaw(depth_.cols, depth_.rows, &source_depth_data_[0]);
-      depth_.data = &source_depth_data_[0];
-    }
-    data_ready_cond_.notify_one();
-  }
-
-  void source_cb2_oni(const boost::shared_ptr<openni_wrapper::Image>& image_wrapper, const boost::shared_ptr<openni_wrapper::DepthImage>& depth_wrapper, float)
-  {
-    {
-      std::lock_guard<std::mutex> lock(data_ready_mutex_);
-      if (exit_)
-          return;
-
-      depth_.cols = depth_wrapper->getWidth();
-      depth_.rows = depth_wrapper->getHeight();
-      depth_.step = depth_.cols * depth_.elemSize();
-
-      source_depth_data_.resize(depth_.cols * depth_.rows);
-      depth_wrapper->fillDepthImageRaw(depth_.cols, depth_.rows, &source_depth_data_[0]);
-      depth_.data = &source_depth_data_[0];
-
-      rgb24_.cols = image_wrapper->getWidth();
-      rgb24_.rows = image_wrapper->getHeight();
-      rgb24_.step = rgb24_.cols * rgb24_.elemSize();
-
-      source_image_data_.resize(rgb24_.cols * rgb24_.rows);
-      image_wrapper->fillRGB(rgb24_.cols, rgb24_.rows, (unsigned char*)&source_image_data_[0]);
-      rgb24_.data = &source_image_data_[0];
-    }
-    data_ready_cond_.notify_one();
-  }
-
-  void
-  source_cb3 (const pcl::PointCloud<pcl::PointXYZRGBA>::ConstPtr & DC3)
-  {
-    {
-      std::unique_lock<std::mutex> lock (data_ready_mutex_, std::try_to_lock);
-      if (exit_ || !lock)
-        return;
-      int width  = DC3->width;
-      int height = DC3->height;
-      depth_.cols = width;
-      depth_.rows = height;
-      depth_.step = depth_.cols * depth_.elemSize ();
-      source_depth_data_.resize (depth_.cols * depth_.rows);
-
-      rgb24_.cols = width;
-      rgb24_.rows = height;
-      rgb24_.step = rgb24_.cols * rgb24_.elemSize ();
-      source_image_data_.resize (rgb24_.cols * rgb24_.rows);
-
-      unsigned char *rgb    = (unsigned char *)  &source_image_data_[0];
-      unsigned short *depth = (unsigned short *) &source_depth_data_[0];
-
-      for (int i=0; i < width*height; i++)
-      {
-        PointXYZRGBA pt = DC3->at (i);
-        rgb[3*i +0] = pt.r;
-        rgb[3*i +1] = pt.g;
-        rgb[3*i +2] = pt.b;
-        depth[i]    = pt.z/0.001;
-      }
-      rgb24_.data = &source_image_data_[0];
-      depth_.data = &source_depth_data_[0];
-    }
-    data_ready_cond_.notify_one ();
   }
 
   /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1060,7 +908,6 @@ struct KinFuApp
       case (int)'m': case (int)'M': app->scene_cloud_view_.toggleExtractionMode (); break;
       case (int)'n': case (int)'N': app->scene_cloud_view_.toggleNormals (); break;
       case (int)'c': case (int)'C': app->scene_cloud_view_.clearClouds (true); break;
-      case (int)'i': case (int)'I': app->toggleIndependentCamera (); break;
       case (int)'b': case (int)'B': app->scene_cloud_view_.toggleCube(app->kinfu_.volume().getSize()); break;
       case (int)'7': case (int)'8': app->writeMesh (key - (int)'0'); break;
       case (int)'1': case (int)'2': case (int)'3': app->writeCloud (key - (int)'0'); break;
@@ -1163,14 +1010,8 @@ main (int argc, char* argv[])
   if (pc::find_switch (argc, argv, "--current-cloud") || pc::find_switch (argc, argv, "-cc"))
     app.initCurrentFrameView ();
 
-  if (pc::find_switch (argc, argv, "--save-views") || pc::find_switch (argc, argv, "-sv"))
-    app.image_view_.accumulate_views_ = true;  //will cause bad alloc after some time
-
   if (pc::find_switch (argc, argv, "--integrate-colors") || pc::find_switch (argc, argv, "-ic"))
     app.toggleColorIntegration();
-
-  if (pc::find_switch (argc, argv, "--scale-truncation") || pc::find_switch (argc, argv, "-st"))
-    app.enableTruncationScaling();
 
   if (pc::parse_x_arguments (argc, argv, "--depth-intrinsics", depth_intrinsics) > 0)
   {
