@@ -217,7 +217,7 @@ bool Evaluation::grab (double stamp, PtrStepSz<const unsigned short>& depth, Ptr
   string depth_file = folder_ + accociations_[i].name1;
   string color_file = folder_ + accociations_[i].name2;
 
-  cv::Mat d_img = cv::imread(depth_file, CV_LOAD_IMAGE_ANYDEPTH | CV_LOAD_IMAGE_ANYCOLOR);
+  cv::Mat d_img = cv::imread(depth_file, cv::IMREAD_ANYDEPTH | cv::IMREAD_ANYCOLOR);
   if(d_img.empty())
       return false;
    
