@@ -815,8 +815,12 @@ struct KinFuApp
         rs2::depth_frame depth = frames.get_depth_frame();
         rs2::video_frame color = frames.get_color_frame();
 
+        cv::Mat rgba(color.get_height(), color.get_width(), CV_8UC4, (void*)color.get_data());
+        cv::Mat rgb;
+        cv::cvtColor(rgba, rgb, cv::COLOR_RGBA2RGB);
+
         memcpy(const_cast<unsigned short*> (depth_.data), depth.get_data(), depth.get_width() * depth.get_height() * sizeof(unsigned short));
-        //memcpy(const_cast<KinfuTracker::PixelRGB*> (rgb24_.data), color.get_data(), color.get_width() * color.get_width() * sizeof(KinfuTracker::PixelRGB));
+        memcpy(const_cast<KinfuTracker::PixelRGB*> (rgb24_.data), rgb.data, color.get_width() * color.get_height() * sizeof(KinfuTracker::PixelRGB));
 
 
         execute(depth_, rgb24_, true);
