@@ -27,10 +27,13 @@ target_link_libraries("${the_target}" pcl_common pcl_io ${OPENNI_LIBRARIES} pcl_
 
 find_package(OpenCV REQUIRED)
 if(OpenCV_FOUND)
-  message(STATUS "OPENCV FONUD")
   target_link_libraries("${the_target}" ${OpenCV_LIBS})
   target_compile_definitions("${the_target}" PRIVATE -DHAVE_OPENCV)
 endif()
+
+find_package(realsense2 REQUIRED)
+target_include_directories("${the_target}" PRIVATE ${realsense2_INCLUDE_DIR})
+target_link_libraries("${the_target}" ${realsense2_LIBRARY})
 
 ## RECORD TSDFVOLUME
 set(the_target pcl_record_tsdfvolume)

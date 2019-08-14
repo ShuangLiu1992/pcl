@@ -10,6 +10,9 @@
 #include <pcl/gpu/kinfu/marching_cubes.h>
 #include <pcl/gpu/containers/initialization.h>
 
+#include <librealsense2/rs.hpp>
+#include <memory>
+
 #include <pcl/common/time.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
@@ -747,10 +750,55 @@ struct KinFuApp
       setViewerPose (*scene_cloud_view_.cloud_viewer_, kinfu_.getCameraPose());
   }
 
+  std::unique_ptr<rs2::context> ctx;
+  std::unique_ptr<rs2::device> device;
+  std::unique_ptr<rs2::pipeline> pipe;
   /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   void
   startMainLoop (bool triggered_capture)
   {
+    rs2::align align_to_depth(RS2_STREAM_DEPTH);
+    rs2::align align_to_color(RS2_STREAM_COLOR);
+
+    this->ctx = std::unique_ptr<rs2::context>(new rs2::context());
+
+    rs2::device_list availableDevices = ctx->query_devices();
+
+    printf("There are %d connected RealSense devices.\n", availableDevices.size());
+    if (availableDevices.size() == 0) {
+      ctx.reset();
+      return;
+    }
+
+    this->device = std::unique_ptr<rs2::device>(new rs2::device(availableDevices.front()));
+
+    this->pipe = std::unique_ptr<rs2::pipeline>(new rs2::pipeline(*ctx));
+
+    rs2::config config;
+    config.enable_stream(RS2_STREAM_DEPTH, 640, 480, RS2_FORMAT_Z16, 30);
+    config.enable_stream(RS2_STREAM_COLOR, 640, 480, RS2_FORMAT_RGBA8, 30);
+
+    auto availableSensors = device->query_sensors();
+    std::cout << "Device consists of " << availableSensors.size() << " sensors:" << std::endl;
+    for (rs2::sensor sensor : availableSensors) {
+      //print_sensor_information(sensor);
+
+      if (rs2::depth_sensor dpt_sensor = sensor.as<rs2::depth_sensor>()) {
+        float scale = dpt_sensor.get_depth_scale();
+        std::cout << "Scale factor for depth sensor is: " << scale << std::endl;
+      }
+    }
+
+    rs2::pipeline_profile pipeline_profile = pipe->start(config);
+
+    rs2::video_stream_profile depth_stream_profile = pipeline_profile.get_stream(RS2_STREAM_DEPTH).as<rs2::video_stream_profile>();
+    rs2::video_stream_profile color_stream_profile = pipeline_profile.get_stream(RS2_STREAM_COLOR).as<rs2::video_stream_profile>();
+
+    // - intrinsics
+    rs2_intrinsics intrinsics_depth = depth_stream_profile.get_intrinsics();
+    rs2_intrinsics intrinsics_rgb = color_stream_profile.get_intrinsics();
+    rs2_extrinsics rs_extrinsics = color_stream_profile.get_extrinsics_to(depth_stream_profile);
+
     {
       std::unique_lock<std::mutex> lock(data_ready_mutex_);
 
@@ -760,6 +808,16 @@ struct KinFuApp
       int currentIndex = 0;
 
       while (evaluation_ptr_->grab (currentIndex, depth_, rgb24_)) {
+        rs2::frameset frames = pipe->wait_for_frames();
+        //frames = align_to_depth.process(frames);
+        frames = align_to_color.process(frames);
+
+        rs2::depth_frame depth = frames.get_depth_frame();
+        rs2::video_frame color = frames.get_color_frame();
+
+        memcpy(const_cast<unsigned short*> (depth_.data), depth.get_data(), depth.get_width() * depth.get_height() * sizeof(unsigned short));
+        //memcpy(const_cast<KinfuTracker::PixelRGB*> (rgb24_.data), color.get_data(), color.get_width() * color.get_width() * sizeof(KinfuTracker::PixelRGB));
+
 
         execute(depth_, rgb24_, true);
         scene_cloud_view_.cloud_viewer_->spinOnce (3);
