@@ -253,6 +253,10 @@ int main(int argc, char *argv[]) {
     cloud.width  = (int)view.triangles_buffer_device_.size();
     cloud.height = 1;
     view.triangles_buffer_device_.download(cloud.points);
+    pcl::PointCloud<pcl::PointXYZ> color;
+    color.width  = (int)view.colors_buffer_device_.size();
+    color.height = 1;
+    view.colors_buffer_device_.download(color.points);
 
     int noTotalTriangles = view.triangles_buffer_device_.size() / 3;
 
@@ -264,21 +268,25 @@ int main(int argc, char *argv[]) {
            << '\n' << "property float x"
            << '\n' << "property float y"
            << '\n' << "property float z"
-//           << '\n' << "property uchar red"
-//           << '\n' << "property uchar green"
-//           << '\n' << "property uchar blue"
+           << '\n' << "property uchar red"
+           << '\n' << "property uchar green"
+           << '\n' << "property uchar blue"
            << '\n' << "element face " << noTotalTriangles
            << '\n' << "property list uchar int vertex_index"
            << '\n' << "end_header" << std::endl;
 
     for (uint i = 0; i < noTotalTriangles; i++)
     {
+        uchar co[3];
+        co[0] = color.points[i * 3 + 0].x * 255;
+        co[1] = color.points[i * 3 + 0].y * 255;
+        co[2] = color.points[i * 3 + 0].z * 255;
         stream.write( reinterpret_cast<const char*> ( &cloud.points[i * 3 + 0] ), sizeof( float ) * 3 );
-        //stream.write( reinterpret_cast<const char*> ( &triangleArray[i].c2 ), sizeof( Vector3u ) );
+        stream.write( reinterpret_cast<const char*> ( co), sizeof( uchar ) * 3 );
         stream.write( reinterpret_cast<const char*> ( &cloud.points[i * 3 + 1] ), sizeof( float ) * 3 );
-        //stream.write( reinterpret_cast<const char*> ( &triangleArray[i].c1 ), sizeof( Vector3u ) );
+        stream.write( reinterpret_cast<const char*> ( co), sizeof( uchar ) * 3 );
         stream.write( reinterpret_cast<const char*> ( &cloud.points[i * 3 + 2] ), sizeof( float ) * 3 );
-        //stream.write( reinterpret_cast<const char*> ( &triangleArray[i].c0 ), sizeof( Vector3u ) );
+        stream.write( reinterpret_cast<const char*> ( co), sizeof( uchar ) * 3 );
 
     }
     for (int i = 0; i < noTotalTriangles; i++)
