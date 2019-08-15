@@ -213,58 +213,11 @@ struct CurrentFrameCloudView {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 struct ImageView {
-    ImageView() : paint_image_(false) {}
-
-    void showScene(KinfuTracker &kinfu, const PtrStepSz<const KinfuTracker::PixelRGB> &rgb24, bool registration,
-                   Eigen::Affine3f *pose_ptr = nullptr) {
-        if (pose_ptr) {
-            raycaster_ptr_->run(kinfu.volume(), *pose_ptr);
-            raycaster_ptr_->generateSceneView(view_device_);
-        } else
-            kinfu.getImage(view_device_);
-
-        if (paint_image_ && registration && !pose_ptr) {
-            colors_device_.upload(rgb24.data, rgb24.step, rgb24.rows, rgb24.cols);
-            paint3DView(colors_device_, view_device_);
-        }
-
-        int cols;
-        view_device_.download(view_host_, cols);
-        cv::Mat rgb(view_device_.rows(), view_device_.cols(), CV_8UC3, &view_host_[0]);
-        cv::imshow("rgb_image", rgb);
-        cv::waitKey(10);
-
-        // viewerColor_.showRGBImage ((unsigned char*)&rgb24.data, rgb24.cols, rgb24.rows);
-    }
-
-    void showDepth(const PtrStepSz<const unsigned short> &depth) {
-        cv::Mat d(depth.rows, depth.cols, CV_16U, const_cast<unsigned short *>(depth.data));
-        cv::imshow("rgb_image", d);
-    }
-
-    void showGeneratedDepth(KinfuTracker &kinfu, const Eigen::Affine3f &pose) {
-        raycaster_ptr_->run(kinfu.volume(), pose);
-        raycaster_ptr_->generateDepthImage(generated_depth_);
-
-        int                         c;
-        std::vector<unsigned short> data;
-        generated_depth_.download(data, c);
-    }
-
-    void toggleImagePaint() {
-        paint_image_ = !paint_image_;
-        cout << "Paint image: " << (paint_image_ ? "On   (requires registration mode)" : "Off") << endl;
-    }
-
-    bool paint_image_;
-
     KinfuTracker::View                  view_device_;
     KinfuTracker::View                  colors_device_;
     std::vector<KinfuTracker::PixelRGB> view_host_;
-
-    RayCaster::Ptr raycaster_ptr_;
-
-    KinfuTracker::DepthMap generated_depth_;
+    RayCaster::Ptr                      raycaster_ptr_;
+    KinfuTracker::DepthMap              generated_depth_;
 };
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -454,55 +407,7 @@ struct KinFuApp {
                                                                   evaluation_ptr_->cx, evaluation_ptr_->cy));
     }
 
-    void execute(const PtrStepSz<const unsigned short> &depth, const PtrStepSz<const KinfuTracker::PixelRGB> &rgb24, bool has_data) {
-        bool has_image = false;
-
-        if (has_data) {
-            depth_device_.upload(depth.data, depth.step, depth.rows, depth.cols);
-            if (integrate_colors_)
-                image_view_.colors_device_.upload(rgb24.data, rgb24.step, rgb24.rows, rgb24.cols);
-
-            {
-                SampledScopeTime fps(time_ms_);
-
-                // run kinfu algorithm
-                if (integrate_colors_)
-                    has_image = kinfu_(depth_device_, image_view_.colors_device_);
-                else
-                    has_image = kinfu_(depth_device_);
-            }
-
-            image_view_.showDepth(depth);
-            // image_view_.showGeneratedDepth(kinfu_, kinfu_.getCameraPose());
-        }
-
-        if (scan_) {
-            scan_ = false;
-            scene_cloud_view_.show(kinfu_, integrate_colors_);
-
-            if (scan_volume_) {
-                cout << "Downloading TSDF volume from device ... " << flush;
-                kinfu_.volume().downloadTsdfAndWeighs(tsdf_volume_.volumeWriteable(), tsdf_volume_.weightsWriteable());
-                tsdf_volume_.setHeader(Eigen::Vector3i(pcl::device::VOLUME_X, pcl::device::VOLUME_Y, pcl::device::VOLUME_Z),
-                                       kinfu_.volume().getSize());
-                cout << "done [" << tsdf_volume_.size() << " voxels]" << endl << endl;
-
-                cout << "Converting volume to TSDF cloud ... " << flush;
-                tsdf_volume_.convertToTsdfCloud(tsdf_cloud_ptr_);
-                cout << "done [" << tsdf_cloud_ptr_->size() << " points]" << endl << endl;
-            } else
-                cout << "[!] tsdf volume download is disabled" << endl << endl;
-        }
-
-        if (scan_mesh_) {
-            scan_mesh_ = false;
-            scene_cloud_view_.showMesh(kinfu_, integrate_colors_);
-        }
-
-        if (viz_ && has_image) {
-            image_view_.showScene(kinfu_, rgb24, registration_, nullptr);
-        }
-    }
+    void execute(const PtrStepSz<const unsigned short> &depth, const PtrStepSz<const KinfuTracker::PixelRGB> &rgb24, bool has_data) {}
 
     std::unique_ptr<rs2::context>  ctx;
     std::unique_ptr<rs2::device>   device;
@@ -733,6 +638,7 @@ int main(int argc, char *argv[]) {
     evaluation_ptr_ = Evaluation::Ptr(new Evaluation("/home/sliu/data/fusion/rgbd_dataset_freiburg1_xyz/"));
     evaluation_ptr_->setMatchFile("matches.txt");
 
+    kinfu_.initColorIntegration(2);
     kinfu_.setDepthIntrinsics(evaluation_ptr_->fx, evaluation_ptr_->fy, evaluation_ptr_->cx, evaluation_ptr_->cy);
     image_view_.raycaster_ptr_ = RayCaster::Ptr(
         new RayCaster(kinfu_.rows(), kinfu_.cols(), evaluation_ptr_->fx, evaluation_ptr_->fy, evaluation_ptr_->cx, evaluation_ptr_->cy));
@@ -767,12 +673,12 @@ int main(int argc, char *argv[]) {
                color.get_width() * color.get_height() * sizeof(KinfuTracker::PixelRGB));
 
         {
-            const PtrStepSz<const unsigned short> &        depth     = depth_;
-            const PtrStepSz<const KinfuTracker::PixelRGB> &rgb24     = rgb24_;
+            const PtrStepSz<const unsigned short> &        depth = depth_;
+            const PtrStepSz<const KinfuTracker::PixelRGB> &rgb24 = rgb24_;
             depth_device_.upload(depth.data, depth.step, depth.rows, depth.cols);
             image_view_.colors_device_.upload(rgb24.data, rgb24.step, rgb24.rows, rgb24.cols);
             kinfu_(depth_device_, image_view_.colors_device_);
-            //image_view_.showDepth(depth);
+            // image_view_.showDepth(depth);
             // image_view_.showGeneratedDepth(kinfu_, kinfu_.getCameraPose());
 
             // scene_cloud_view_.showMesh(kinfu_, true);
@@ -785,27 +691,28 @@ int main(int argc, char *argv[]) {
             view_device_.download(view_host_, cols);
             cv::Mat rgbb(view_device_.rows(), view_device_.cols(), CV_8UC3, &view_host_[0]);
             cv::imshow("rgb_image", rgbb);
-            cv::waitKey(10);
+            char key = cv::waitKey(10);
+            if (key == 'q') {
+                break;
+            }
         }
 
         currentIndex += 1;
     }
-
-    // executing
-    try {
-        app.startMainLoop(triggered_capture);
-    } catch (const pcl::PCLException & /*e*/) {
-        cout << "PCLException" << endl;
-    } catch (const std::bad_alloc & /*e*/) {
-        cout << "Bad alloc" << endl;
-    } catch (const std::exception & /*e*/) {
-        cout << "Exception" << endl;
+    scene_cloud_view_.show(kinfu_, true);
+    const SceneCloudView &view = scene_cloud_view_;
+    if (view.point_colors_ptr_->points.empty()) // no colors
+    {
+        if (view.valid_combined_)
+            writeCloudFile(KinFuApp::PLY, view.combined_ptr_);
+        else
+            writeCloudFile(KinFuApp::PLY, view.cloud_ptr_);
+    } else {
+        if (view.valid_combined_)
+            writeCloudFile(KinFuApp::PLY, merge<PointXYZRGBNormal>(*view.combined_ptr_, *view.point_colors_ptr_));
+        else
+            writeCloudFile(KinFuApp::PLY, merge<PointXYZRGB>(*view.cloud_ptr_, *view.point_colors_ptr_));
     }
-
-    app.scene_cloud_view_.show(app.kinfu_, app.integrate_colors_);
-    // app.scene_cloud_view_.showMesh(app.kinfu_, app.integrate_colors_);
-    // app.writeMesh(KinFuApp::MESH_PLY);
-    app.writeCloud(KinFuApp::PLY);
 
     return 0;
 }
