@@ -28,6 +28,7 @@
 #include "tsdf_volume.hpp"
 
 #include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/highgui.hpp>
 using ScopeTimeT = pcl::ScopeTime;
 
 #include "../src/internal.h"
@@ -174,12 +175,6 @@ private:
 void
 setViewerPose (visualization::PCLVisualizer& viewer, const Eigen::Affine3f& viewer_pose)
 {
-  Eigen::Vector3f pos_vector = viewer_pose * Eigen::Vector3f (0, 0, 0);
-  Eigen::Vector3f look_at_vector = viewer_pose.rotation () * Eigen::Vector3f (0, 0, 1) + pos_vector;
-  Eigen::Vector3f up_vector = viewer_pose.rotation () * Eigen::Vector3f (0, -1, 0);
-  viewer.setCameraPosition (pos_vector[0], pos_vector[1], pos_vector[2],
-                            look_at_vector[0], look_at_vector[1], look_at_vector[2],
-                            up_vector[0], up_vector[1], up_vector[2]);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -187,16 +182,7 @@ setViewerPose (visualization::PCLVisualizer& viewer, const Eigen::Affine3f& view
 Eigen::Affine3f
 getViewerPose (visualization::PCLVisualizer& viewer)
 {
-  Eigen::Affine3f pose = viewer.getViewerPose();
-  Eigen::Matrix3f rotation = pose.linear();
-
-  Matrix3f axis_reorder;
-  axis_reorder << 0,  0,  1,
-                 -1,  0,  0,
-                  0, -1,  0;
-
-  rotation *= axis_reorder;
-  pose.linear() = rotation;
+  Eigen::Affine3f pose;
   return pose;
 }
 
@@ -300,17 +286,6 @@ struct ImageView
 {
   ImageView(int viz) : viz_(viz), paint_image_ (false)
   {
-    if (viz_)
-    {
-        viewerScene_ = pcl::visualization::ImageViewer::Ptr(new pcl::visualization::ImageViewer);
-        viewerDepth_ = pcl::visualization::ImageViewer::Ptr(new pcl::visualization::ImageViewer);
-
-        viewerScene_->setWindowTitle ("View3D from ray tracing");
-        viewerScene_->setPosition (0, 0);
-        viewerDepth_->setWindowTitle ("Kinect Depth stream");
-        viewerDepth_->setPosition (640, 0);
-        //viewerColor_.setWindowTitle ("Kinect RGB stream");
-    }
   }
 
   void
@@ -333,8 +308,9 @@ struct ImageView
 
     int cols;
     view_device_.download (view_host_, cols);
-    if (viz_)
-        viewerScene_->showRGBImage (reinterpret_cast<unsigned char*> (&view_host_[0]), view_device_.cols (), view_device_.rows (), "rgb_image");
+    cv::Mat rgb( view_device_.rows (), view_device_.cols (), CV_8UC3, &view_host_[0]);
+    cv::imshow("rgb_image", rgb);
+    cv::waitKey(10);
 
     //viewerColor_.showRGBImage ((unsigned char*)&rgb24.data, rgb24.cols, rgb24.rows);
   }
@@ -342,8 +318,8 @@ struct ImageView
   void
   showDepth (const PtrStepSz<const unsigned short>& depth)
   {
-     if (viz_)
-       viewerDepth_->showShortImage (depth.data, depth.cols, depth.rows, 0, 5000, true, "short_image");
+    cv::Mat d( depth.rows, depth.cols, CV_16U, const_cast<unsigned short*>(depth.data));
+    cv::imshow("rgb_image", d);
   }
 
   void
@@ -355,9 +331,6 @@ struct ImageView
     int c;
     std::vector<unsigned short> data;
     generated_depth_.download(data, c);
-
-    if (viz_)
-        viewerDepth_->showShortImage (&data[0], generated_depth_.cols(), generated_depth_.rows(), 0, 5000, true, "short_image");
   }
 
   void
@@ -369,10 +342,6 @@ struct ImageView
 
   int viz_;
   bool paint_image_;
-
-  visualization::ImageViewer::Ptr viewerScene_;
-  visualization::ImageViewer::Ptr viewerDepth_;
-  //visualization::ImageViewer viewerColor_;
 
   KinfuTracker::View view_device_;
   KinfuTracker::View colors_device_;
@@ -396,27 +365,11 @@ struct SceneCloudView
     normals_ptr_ = PointCloud<Normal>::Ptr (new PointCloud<Normal>);
     combined_ptr_ = PointCloud<PointNormal>::Ptr (new PointCloud<PointNormal>);
     point_colors_ptr_ = PointCloud<RGB>::Ptr (new PointCloud<RGB>);
-
-    if (viz_)
-    {
-        cloud_viewer_ = pcl::visualization::PCLVisualizer::Ptr( new pcl::visualization::PCLVisualizer("Scene Cloud Viewer") );
-
-        cloud_viewer_->setBackgroundColor (0, 0, 0);
-        cloud_viewer_->addCoordinateSystem (1.0, "global");
-        cloud_viewer_->initCameraParameters ();
-        cloud_viewer_->setPosition (0, 500);
-        cloud_viewer_->setSize (640, 480);
-        cloud_viewer_->setCameraClipDistances (0.01, 10.01);
-
-        cloud_viewer_->addText ("H: print help", 2, 15, 20, 34, 135, 246);
-    }
   }
 
   void
   show (KinfuTracker& kinfu, bool integrate_colors)
   {
-    viewer_pose_ = kinfu.getCameraPose();
-
     ScopeTimeT time ("PointCloud Extraction");
     cout << "\nGetting cloud... " << flush;
 
@@ -459,22 +412,6 @@ struct SceneCloudView
     }
     size_t points_size = valid_combined_ ? combined_ptr_->points.size () : cloud_ptr_->points.size ();
     cout << "Done.  Cloud size: " << points_size / 1000 << "K" << endl;
-
-    if (viz_)
-    {
-        cloud_viewer_->removeAllPointClouds ();
-        if (valid_combined_)
-        {
-          visualization::PointCloudColorHandlerRGBCloud<PointNormal> rgb(combined_ptr_, point_colors_ptr_);
-          cloud_viewer_->addPointCloud<PointNormal> (combined_ptr_, rgb, "Cloud");
-          cloud_viewer_->addPointCloudNormals<PointNormal>(combined_ptr_, 50);
-        }
-        else
-        {
-          visualization::PointCloudColorHandlerRGBCloud<PointXYZ> rgb(cloud_ptr_, point_colors_ptr_);
-          cloud_viewer_->addPointCloud<PointXYZ> (cloud_ptr_, rgb);
-        }
-    }
   }
 
   void
@@ -482,11 +419,6 @@ struct SceneCloudView
   {
       if (!viz_)
           return;
-
-      if (cube_added_)
-          cloud_viewer_->removeShape("cube");
-      else
-        cloud_viewer_->addCube(size*0.5, Eigen::Quaternionf::Identity(), size(0), size(1), size(2));
 
       cube_added_ = !cube_added_;
   }
@@ -518,7 +450,6 @@ struct SceneCloudView
     if (!viz_)
         return;
 
-    cloud_viewer_->removeAllPointClouds ();
     cloud_ptr_->points.clear ();
     normals_ptr_->points.clear ();
     if (print_message)
@@ -540,10 +471,6 @@ struct SceneCloudView
     DeviceArray<PointXYZ> triangles_device = marching_cubes_->run(kinfu.volume(), triangles_buffer_device_);
     mesh_ptr_ = convertToMesh(triangles_device);
 
-    cloud_viewer_->removeAllPointClouds ();
-    if (mesh_ptr_)
-      cloud_viewer_->addPolygonMesh(*mesh_ptr_);
-
     cout << "Done.  Triangles number: " << triangles_device.size() / MarchingCubes::POINTS_PER_TRIANGLE / 1000 << "K" << endl;
   }
 
@@ -552,10 +479,6 @@ struct SceneCloudView
   bool compute_normals_;
   bool valid_combined_;
   bool cube_added_;
-
-  Eigen::Affine3f viewer_pose_;
-
-  visualization::PCLVisualizer::Ptr cloud_viewer_;
 
   PointCloud<PointXYZ>::Ptr cloud_ptr_;
   PointCloud<Normal>::Ptr normals_ptr_;
@@ -721,12 +644,8 @@ struct KinFuApp
 
     if (viz_ && has_image)
     {
-      Eigen::Affine3f viewer_pose = getViewerPose(*scene_cloud_view_.cloud_viewer_);
-      image_view_.showScene (kinfu_, rgb24, registration_, independent_camera_ ? &viewer_pose : nullptr);
+      image_view_.showScene (kinfu_, rgb24, registration_, nullptr);
     }
-
-    if (viz_ && !independent_camera_)
-      setViewerPose (*scene_cloud_view_.cloud_viewer_, kinfu_.getCameraPose());
   }
 
   std::unique_ptr<rs2::context> ctx;
@@ -781,9 +700,6 @@ struct KinFuApp
     {
       std::unique_lock<std::mutex> lock(data_ready_mutex_);
 
-      bool scene_view_not_stopped= viz_ ? !scene_cloud_view_.cloud_viewer_->wasStopped () : true;
-      bool image_view_not_stopped= viz_ ? !image_view_.viewerScene_->wasStopped () : true;
-
       int currentIndex = 0;
 
       while (evaluation_ptr_->grab (currentIndex, depth_, rgb24_)) {
@@ -803,7 +719,6 @@ struct KinFuApp
 
 
         execute(depth_, rgb24_, true);
-        scene_cloud_view_.cloud_viewer_->spinOnce (3);
         currentIndex += 1;
       }
     }

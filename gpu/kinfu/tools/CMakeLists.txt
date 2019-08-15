@@ -1,17 +1,3 @@
-if(NOT WITH_OPENNI)
-  return()
-endif()
-
-if(NOT VTK_FOUND)
-  set(DEFAULT FALSE)
-  set(REASON "VTK was not found.")
-else()
-  set(DEFAULT TRUE)
-  set(REASON)
-  set(VTK_USE_FILE "${VTK_USE_FILE}" CACHE INTERNAL "VTK_USE_FILE")
-  include("${VTK_USE_FILE}")
-  include_directories("${CMAKE_CURRENT_SOURCE_DIR}/include")
-endif()
 
 file(GLOB hdrs "*.h*")
 include_directories(SYSTEM ${VTK_INCLUDE_DIRS} ${OPENNI_INCLUDE_DIRS})
@@ -33,7 +19,7 @@ endif()
 
 find_package(realsense2 REQUIRED)
 target_include_directories("${the_target}" PRIVATE ${realsense2_INCLUDE_DIR})
-target_link_libraries("${the_target}" ${realsense2_LIBRARY} pcl_visualization)
+target_link_libraries("${the_target}" ${realsense2_LIBRARY})
 #
 ### RECORD TSDFVOLUME
 #set(the_target pcl_record_tsdfvolume)
