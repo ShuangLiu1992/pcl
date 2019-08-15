@@ -249,16 +249,20 @@ int main(int argc, char *argv[]) {
     scene_cloud_view_.showMesh(kinfu_, true);
     pcl::io::savePLYFile("/home/sliu/Dropbox/sync/mesh/mesh.ply", *view.mesh_ptr_);
 
-    pcl::PointCloud<pcl::PointXYZ> cloud;
-    cloud.width  = (int)view.triangles_buffer_device_.size();
-    cloud.height = 1;
-    view.triangles_buffer_device_.download(cloud.points);
-    pcl::PointCloud<pcl::PointXYZ> color;
-    color.width  = (int)view.colors_buffer_device_.size();
-    color.height = 1;
-    view.colors_buffer_device_.download(color.points);
+    pcl::gpu::DeviceArray<pcl::PointXYZ> triangles_buffer_device_;
+    pcl::gpu::DeviceArray<pcl::PointXYZ> colors_buffer_device_;
+    pcl::gpu::DeviceArray<pcl::PointXYZ> triangles_device = view.marching_cubes_->run(kinfu_.volume(), kinfu_.colorVolume(), triangles_buffer_device_, colors_buffer_device_);
 
-    int noTotalTriangles = view.triangles_buffer_device_.size() / 3;
+    pcl::PointCloud<pcl::PointXYZ> cloud;
+    cloud.width  = (int)triangles_device.size();
+    cloud.height = 1;
+    triangles_buffer_device_.download(cloud.points);
+    pcl::PointCloud<pcl::PointXYZ> color;
+    color.width  = (int)triangles_device.size();
+    color.height = 1;
+    colors_buffer_device_.download(color.points);
+
+    int noTotalTriangles = triangles_device.size() / 3;
 
     std::ofstream stream("/home/sliu/test.ply");
     stream << "ply"
@@ -275,6 +279,8 @@ int main(int argc, char *argv[]) {
            << '\n' << "property list uchar int vertex_index"
            << '\n' << "end_header" << std::endl;
 
+    std::cout << noTotalTriangles << std::endl;
+
     for (uint i = 0; i < noTotalTriangles; i++)
     {
         uchar co[3];
@@ -283,8 +289,14 @@ int main(int argc, char *argv[]) {
         co[2] = color.points[i * 3 + 0].z * 255;
         stream.write( reinterpret_cast<const char*> ( &cloud.points[i * 3 + 0] ), sizeof( float ) * 3 );
         stream.write( reinterpret_cast<const char*> ( co), sizeof( uchar ) * 3 );
+        co[0] = color.points[i * 3 + 1].x * 255;
+        co[1] = color.points[i * 3 + 1].y * 255;
+        co[2] = color.points[i * 3 + 1].z * 255;
         stream.write( reinterpret_cast<const char*> ( &cloud.points[i * 3 + 1] ), sizeof( float ) * 3 );
         stream.write( reinterpret_cast<const char*> ( co), sizeof( uchar ) * 3 );
+        co[0] = color.points[i * 3 + 2].x * 255;
+        co[1] = color.points[i * 3 + 2].y * 255;
+        co[2] = color.points[i * 3 + 2].z * 255;
         stream.write( reinterpret_cast<const char*> ( &cloud.points[i * 3 + 2] ), sizeof( float ) * 3 );
         stream.write( reinterpret_cast<const char*> ( co), sizeof( uchar ) * 3 );
 
