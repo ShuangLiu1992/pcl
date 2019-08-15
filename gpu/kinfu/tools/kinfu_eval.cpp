@@ -15,8 +15,6 @@
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 
-#include "evaluation.h"
-
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
@@ -218,14 +216,8 @@ int mainx(int argc, char *argv[]) {
     int currentIndex = 0;
 
     ImageView       image_view_;
-    Evaluation::Ptr evaluation_ptr_;
-    evaluation_ptr_ = Evaluation::Ptr(new Evaluation("/home/sliu/data/fusion/rgbd_dataset_freiburg1_xyz/"));
-    evaluation_ptr_->setMatchFile("matches.txt");
 
     kinfu_.initColorIntegration(2);
-    kinfu_.setDepthIntrinsics(evaluation_ptr_->fx, evaluation_ptr_->fy, evaluation_ptr_->cx, evaluation_ptr_->cy);
-    image_view_.raycaster_ptr_ = pcl::gpu::RayCaster::Ptr(new pcl::gpu::RayCaster(
-        kinfu_.rows(), kinfu_.cols(), evaluation_ptr_->fx, evaluation_ptr_->fy, evaluation_ptr_->cx, evaluation_ptr_->cy));
 
     pcl::gpu::KinfuTracker::DepthMap                            depth_device_;
     pcl::gpu::PtrStepSz<const unsigned short>                   depth_;

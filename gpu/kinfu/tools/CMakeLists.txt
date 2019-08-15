@@ -4,7 +4,7 @@ include_directories(SYSTEM ${VTK_INCLUDE_DIRS} ${OPENNI_INCLUDE_DIRS})
 
 ## KINECT FUSION
 set(the_target pcl_kinfu_app)
-set(srcs kinfu_eval.cpp capture.cpp evaluation.cpp)
+set(srcs kinfu_eval.cpp capture.cpp)
 
 source_group("Source Files" FILES ${srcs})
 
