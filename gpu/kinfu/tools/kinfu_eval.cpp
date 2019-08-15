@@ -63,16 +63,6 @@ boost::shared_ptr<pcl::PolygonMesh> convertToMesh(const pcl::gpu::DeviceArray<pc
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-struct ImageView {
-    pcl::gpu::KinfuTracker::View                  view_device_;
-    pcl::gpu::KinfuTracker::View                  colors_device_;
-    std::vector<pcl::gpu::KinfuTracker::PixelRGB> view_host_;
-    pcl::gpu::RayCaster::Ptr                      raycaster_ptr_;
-    pcl::gpu::KinfuTracker::DepthMap              generated_depth_;
-};
-
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 struct SceneCloudView {
     enum { GPU_Connected6 = 0, CPU_Connected6 = 1, CPU_Connected26 = 2 };
 
@@ -121,7 +111,7 @@ struct SceneCloudView {
         if (!marching_cubes_)
             marching_cubes_ = pcl::gpu::MarchingCubes::Ptr(new pcl::gpu::MarchingCubes());
 
-        pcl::gpu::DeviceArray<pcl::PointXYZ> triangles_device = marching_cubes_->run(kinfu.volume(), triangles_buffer_device_);
+        pcl::gpu::DeviceArray<pcl::PointXYZ> triangles_device = marching_cubes_->run(kinfu.volume(), kinfu.colorVolume(), triangles_buffer_device_, colors_buffer_device_);
         mesh_ptr_                                             = convertToMesh(triangles_device);
     }
 
@@ -143,6 +133,7 @@ struct SceneCloudView {
 
     pcl::gpu::MarchingCubes::Ptr         marching_cubes_;
     pcl::gpu::DeviceArray<pcl::PointXYZ> triangles_buffer_device_;
+    pcl::gpu::DeviceArray<pcl::PointXYZ> colors_buffer_device_;
 
     boost::shared_ptr<pcl::PolygonMesh> mesh_ptr_;
 };
@@ -169,12 +160,9 @@ int main(int argc, char *argv[]) {
     std::cout << width << " " << height << std::endl;
     std::cout << fx << " " << fy << " " << cx << " " << cy << std::endl;
 
-    ImageView image_view_;
-
     pcl::gpu::KinfuTracker kinfu_(height, width);
     kinfu_.initColorIntegration(2);
     kinfu_.setDepthIntrinsics(fx, fy, cx, cy);
-    image_view_.raycaster_ptr_ = pcl::gpu::RayCaster::Ptr(new pcl::gpu::RayCaster(kinfu_.rows(), kinfu_.cols(), fx, fy, cx, cy));
 
     pcl::gpu::KinfuTracker::DepthMap                            depth_device_;
     pcl::gpu::PtrStepSz<const unsigned short>                   depth_;
@@ -184,8 +172,6 @@ int main(int argc, char *argv[]) {
     pcl::gpu::KinfuTracker::View                  view_device_;
     pcl::gpu::KinfuTracker::View                  colors_device_;
     std::vector<pcl::gpu::KinfuTracker::PixelRGB> view_host_;
-
-    pcl::gpu::RayCaster::Ptr raycaster_ptr_;
 
     pcl::gpu::KinfuTracker::DepthMap generated_depth_;
     for (int i = 0; i < total_frames; i++) {
@@ -207,8 +193,8 @@ int main(int argc, char *argv[]) {
             const pcl::gpu::PtrStepSz<const unsigned short> &                  depth = depth_;
             const pcl::gpu::PtrStepSz<const pcl::gpu::KinfuTracker::PixelRGB> &rgb24 = rgb24_;
             depth_device_.upload(depth.data, depth.step, depth.rows, depth.cols);
-            image_view_.colors_device_.upload(rgb24.data, rgb24.step, rgb24.rows, rgb24.cols);
-            kinfu_(depth_device_, image_view_.colors_device_);
+            colors_device_.upload(rgb24.data, rgb24.step, rgb24.rows, rgb24.cols);
+            kinfu_(depth_device_, colors_device_);
             kinfu_.getImage(view_device_);
 
             colors_device_.upload(rgb24.data, rgb24.step, rgb24.rows, rgb24.cols);
@@ -232,7 +218,8 @@ int main(int argc, char *argv[]) {
     const SceneCloudView &view = scene_cloud_view_;
     pcl::io::savePLYFileASCII("/home/sliu/Dropbox/sync/mesh/cloud.ply",
                               *merge<pcl::PointXYZRGB>(*view.cloud_ptr_, *view.point_colors_ptr_));
-    // pcl::io::savePLYFile("mesh.ply", mesh);
+    scene_cloud_view_.showMesh(kinfu_, true);
+    pcl::io::savePLYFile("/home/sliu/Dropbox/sync/mesh/mesh.ply", *view.mesh_ptr_);
 
     return 0;
 }

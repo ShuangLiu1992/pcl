@@ -64,15 +64,6 @@ boost::shared_ptr<pcl::PolygonMesh> convertToMesh(const pcl::gpu::DeviceArray<pc
     }
     return mesh_ptr;
 }
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-struct ImageView {
-    pcl::gpu::KinfuTracker::View                  view_device_;
-    pcl::gpu::KinfuTracker::View                  colors_device_;
-    std::vector<pcl::gpu::KinfuTracker::PixelRGB> view_host_;
-    pcl::gpu::RayCaster::Ptr                      raycaster_ptr_;
-    pcl::gpu::KinfuTracker::DepthMap              generated_depth_;
-};
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -151,43 +142,33 @@ struct SceneCloudView {
 };
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-template <typename CloudPtr> void writeCloudFile(const CloudPtr &cloud_prt) { pcl::io::savePLYFileASCII("cloud.ply", *cloud_prt); }
 
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-void writePolygonMeshFile(const pcl::PolygonMesh &mesh) { pcl::io::savePLYFile("mesh.ply", mesh); }
-
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-int mainx(int argc, char *argv[]) {
+int main(int argc, char *argv[]) {
     int device_id = 0;
     pcl::gpu::setDevice(device_id);
     pcl::gpu::printShortCudaDeviceInfo(device_id);
     std::vector<float> depth_intrinsics;
 
-    std::unique_ptr<rs2::context>  ctx;
-    std::unique_ptr<rs2::device>   device;
-    std::unique_ptr<rs2::pipeline> pipe;
+    std::unique_ptr<rs2::context> ctx = std::unique_ptr<rs2::context>(new rs2::context());
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     rs2::align align_to_depth(RS2_STREAM_DEPTH);
     rs2::align align_to_color(RS2_STREAM_COLOR);
-
-    ctx = std::unique_ptr<rs2::context>(new rs2::context());
 
     rs2::device_list availableDevices = ctx->query_devices();
 
     printf("There are %d connected RealSense devices.\n", availableDevices.size());
     if (availableDevices.size() == 0) {
-        ctx.reset();
+        throw std::runtime_error("");
     }
 
-    device = std::unique_ptr<rs2::device>(new rs2::device(availableDevices.front()));
+    std::unique_ptr<rs2::device>   device = std::unique_ptr<rs2::device>(new rs2::device(availableDevices.front()));
+    std::unique_ptr<rs2::pipeline> pipe   = std::unique_ptr<rs2::pipeline>(new rs2::pipeline(*ctx));
 
-    pipe = std::unique_ptr<rs2::pipeline>(new rs2::pipeline(*ctx));
-
+    int         width  = 640;
+    int         height = 480;
     rs2::config config;
-    config.enable_stream(RS2_STREAM_DEPTH, 640, 480, RS2_FORMAT_Z16, 30);
-    config.enable_stream(RS2_STREAM_COLOR, 640, 480, RS2_FORMAT_RGBA8, 30);
+    config.enable_stream(RS2_STREAM_DEPTH, width, height, RS2_FORMAT_Z16, 30);
+    config.enable_stream(RS2_STREAM_COLOR, width, height, RS2_FORMAT_RGBA8, 30);
 
     auto availableSensors = device->query_sensors();
     std::cout << "Device consists of " << availableSensors.size() << " sensors:" << std::endl;
@@ -205,17 +186,13 @@ int mainx(int argc, char *argv[]) {
     rs2::video_stream_profile depth_stream_profile = pipeline_profile.get_stream(RS2_STREAM_DEPTH).as<rs2::video_stream_profile>();
     rs2::video_stream_profile color_stream_profile = pipeline_profile.get_stream(RS2_STREAM_COLOR).as<rs2::video_stream_profile>();
 
-    pcl::gpu::KinfuTracker kinfu_;
+    pcl::gpu::KinfuTracker kinfu_(height, width);
 
     // - intrinsics
     rs2_intrinsics intrinsics_depth = depth_stream_profile.get_intrinsics();
     rs2_intrinsics intrinsics_rgb   = color_stream_profile.get_intrinsics();
     rs2_extrinsics rs_extrinsics    = color_stream_profile.get_extrinsics_to(depth_stream_profile);
     kinfu_.setDepthIntrinsics(intrinsics_depth.fx, intrinsics_depth.fy, intrinsics_depth.ppx, intrinsics_depth.ppy);
-
-    int currentIndex = 0;
-
-    ImageView       image_view_;
 
     kinfu_.initColorIntegration(2);
 
@@ -228,10 +205,13 @@ int mainx(int argc, char *argv[]) {
     pcl::gpu::KinfuTracker::View                  colors_device_;
     std::vector<pcl::gpu::KinfuTracker::PixelRGB> view_host_;
 
-    pcl::gpu::RayCaster::Ptr raycaster_ptr_;
-
     pcl::gpu::KinfuTracker::DepthMap generated_depth_;
-    // while (evaluation_ptr_->grab(currentIndex, depth_, rgb24_)) {
+
+    bool recording = false;
+
+    int         current_idx = 0;
+    std::string base_dir    = "/home/sliu/tmp/fusion/";
+
     while (true) {
         rs2::frameset frames = pipe->wait_for_frames();
         // frames = align_to_depth.process(frames);
@@ -244,29 +224,28 @@ int mainx(int argc, char *argv[]) {
         cv::Mat rgb;
         cv::cvtColor(rgba, rgb, cv::COLOR_RGBA2RGB);
 
-        depth_.data = reinterpret_cast<unsigned short *>(const_cast<void *>(depth.get_data()));
-        depth_.cols = depth.get_width();
-        depth_.rows = depth.get_height();
-        depth_.step = depth.get_stride_in_bytes(); // 1280 = 640*2
+        cv::Mat rgba_mat(color.get_height(), color.get_width(), CV_8UC4, (void *)color.get_data());
+        cv::Mat depth_map(depth.get_height(), depth.get_width(), CV_16U, (void *)depth.get_data());
+        cv::imshow("rgb", rgba_mat);
+        cv::imshow("depth", depth_map);
 
-        rgb24_.data = reinterpret_cast<pcl::gpu::KinfuTracker::PixelRGB *>(rgb.data);
-        rgb24_.cols = color.get_width();
-        rgb24_.rows = color.get_height();
-        rgb24_.step = rgb.step1(); // 1280 = 640*2
+        if (recording) {
+            depth_.data = reinterpret_cast<unsigned short *>(const_cast<void *>(depth.get_data()));
+            depth_.cols = depth.get_width();
+            depth_.rows = depth.get_height();
+            depth_.step = depth.get_stride_in_bytes(); // 1280 = 640*2
 
-        {
-            const pcl::gpu::PtrStepSz<const unsigned short> &                  depth = depth_;
-            const pcl::gpu::PtrStepSz<const pcl::gpu::KinfuTracker::PixelRGB> &rgb24 = rgb24_;
-            depth_device_.upload(depth.data, depth.step, depth.rows, depth.cols);
-            image_view_.colors_device_.upload(rgb24.data, rgb24.step, rgb24.rows, rgb24.cols);
-            kinfu_(depth_device_, image_view_.colors_device_);
-            // image_view_.showDepth(depth);
-            // image_view_.showGeneratedDepth(kinfu_, kinfu_.getCameraPose());
+            rgb24_.data = reinterpret_cast<pcl::gpu::KinfuTracker::PixelRGB *>(rgb.data);
+            rgb24_.cols = color.get_width();
+            rgb24_.rows = color.get_height();
+            rgb24_.step = rgb.step1(); // 1280 = 640*2
 
-            // scene_cloud_view_.showMesh(kinfu_, true);
+            depth_device_.upload(depth_.data, depth_.step, depth_.rows, depth_.cols);
+            colors_device_.upload(rgb24_.data, rgb24_.step, rgb24_.rows, rgb24_.cols);
+            kinfu_(depth_device_, colors_device_);
             kinfu_.getImage(view_device_);
 
-            colors_device_.upload(rgb24.data, rgb24.step, rgb24.rows, rgb24.cols);
+            colors_device_.upload(rgb24_.data, rgb24_.step, rgb24_.rows, rgb24_.cols);
             paint3DView(colors_device_, view_device_, 0.5);
 
             int cols;
@@ -274,130 +253,38 @@ int mainx(int argc, char *argv[]) {
             cv::Mat rgbb(view_device_.rows(), view_device_.cols(), CV_8UC3, &view_host_[0]);
             cv::cvtColor(rgbb, rgbb, cv::COLOR_RGB2BGR);
             cv::imshow("rgb_image", rgbb);
-            char key = cv::waitKey(10);
-            if (key == 'q') {
-                break;
-            }
-            if (key == 'r') {
-                kinfu_.reset();
-            }
+
+            cv::Mat rgb;
+            cv::cvtColor(rgba_mat, rgb, cv::COLOR_RGBA2RGB);
+            cv::imshow("rgb", rgba_mat);
+            cv::imshow("depth", depth_map);
+
+            cv::cvtColor(rgb, rgb, cv::COLOR_RGB2BGR);
+            cv::imwrite(base_dir + "c" + std::to_string(current_idx) + ".png", rgb);
+            cv::imwrite(base_dir + "d" + std::to_string(current_idx) + ".png", depth_map);
+            current_idx++;
         }
-
-        currentIndex += 1;
-    }
-    scene_cloud_view_.show(kinfu_, true);
-    const SceneCloudView &view = scene_cloud_view_;
-    if (view.point_colors_ptr_->points.empty()) // no colors
-    {
-        if (view.valid_combined_)
-            writeCloudFile(view.combined_ptr_);
-        else
-            writeCloudFile(view.cloud_ptr_);
-    } else {
-        if (view.valid_combined_)
-            writeCloudFile(merge<pcl::PointXYZRGBNormal>(*view.combined_ptr_, *view.point_colors_ptr_));
-        else
-            writeCloudFile(merge<pcl::PointXYZRGB>(*view.cloud_ptr_, *view.point_colors_ptr_));
-    }
-
-    return 0;
-}
-
-int main(int argc, char *argv[]) {
-    std::string   base_dir = "/home/sliu/tmp/fusion/";
-    std::ifstream in(base_dir + "info.txt");
-    int           total_frames;
-    int           width;
-    int           height;
-    in >> total_frames;
-    in >> width;
-    in >> height;
-    float fx;
-    float fy;
-    float cx;
-    float cy;
-    in >> fx;
-    in >> fy;
-    in >> cx;
-    in >> cy;
-
-    std::cout << total_frames << std::endl;
-    std::cout << width << " " << height << std::endl;
-    std::cout << fx << " " << fy << " " << cx << " " << cy << std::endl;
-
-    ImageView image_view_;
-
-    pcl::gpu::KinfuTracker kinfu_(height, width);
-    kinfu_.initColorIntegration(2);
-    kinfu_.setDepthIntrinsics(fx, fy, cx, cy);
-    image_view_.raycaster_ptr_ = pcl::gpu::RayCaster::Ptr(new pcl::gpu::RayCaster(kinfu_.rows(), kinfu_.cols(), fx, fy, cx, cy));
-
-    pcl::gpu::KinfuTracker::DepthMap                            depth_device_;
-    pcl::gpu::PtrStepSz<const unsigned short>                   depth_;
-    pcl::gpu::PtrStepSz<const pcl::gpu::KinfuTracker::PixelRGB> rgb24_;
-
-    SceneCloudView                                scene_cloud_view_;
-    pcl::gpu::KinfuTracker::View                  view_device_;
-    pcl::gpu::KinfuTracker::View                  colors_device_;
-    std::vector<pcl::gpu::KinfuTracker::PixelRGB> view_host_;
-
-    pcl::gpu::RayCaster::Ptr raycaster_ptr_;
-
-    pcl::gpu::KinfuTracker::DepthMap generated_depth_;
-    for (int i = 0; i < total_frames; i++) {
-        cv::Mat rgb   = cv::imread(base_dir + "c" + std::to_string(i) + ".png", cv::IMREAD_ANYCOLOR | cv::IMREAD_ANYDEPTH);
-        cv::Mat depth = cv::imread(base_dir + "d" + std::to_string(i) + ".png", cv::IMREAD_ANYCOLOR | cv::IMREAD_ANYDEPTH);
-        cv::cvtColor(rgb, rgb, cv::COLOR_BGR2RGB);
-
-        depth_.data = reinterpret_cast<unsigned short *>(depth.data);
-        depth_.cols = depth.cols;
-        depth_.rows = depth.rows;
-        depth_.step = depth.cols * sizeof(unsigned short);
-
-        rgb24_.data = reinterpret_cast<pcl::gpu::KinfuTracker::PixelRGB *>(rgb.data);
-        rgb24_.cols = rgb.cols;
-        rgb24_.rows = rgb.rows;
-        rgb24_.step = rgb.cols * sizeof(pcl::gpu::KinfuTracker::PixelRGB);
-
-        {
-            const pcl::gpu::PtrStepSz<const unsigned short> &                  depth = depth_;
-            const pcl::gpu::PtrStepSz<const pcl::gpu::KinfuTracker::PixelRGB> &rgb24 = rgb24_;
-            depth_device_.upload(depth.data, depth.step, depth.rows, depth.cols);
-            image_view_.colors_device_.upload(rgb24.data, rgb24.step, rgb24.rows, rgb24.cols);
-            kinfu_(depth_device_, image_view_.colors_device_);
-            kinfu_.getImage(view_device_);
-
-            colors_device_.upload(rgb24.data, rgb24.step, rgb24.rows, rgb24.cols);
-            paint3DView(colors_device_, view_device_, 0.5);
-
-            int cols;
-            view_device_.download(view_host_, cols);
-            cv::Mat rgbb(view_device_.rows(), view_device_.cols(), CV_8UC3, &view_host_[0]);
-            cv::cvtColor(rgbb, rgbb, cv::COLOR_BGR2RGB);
-            cv::imshow("rgb_image", rgbb);
-            char key = cv::waitKey(10);
-            if (key == 'q') {
-                break;
-            }
-            if (key == 'r') {
-                kinfu_.reset();
-            }
+        int key = cv::waitKey(10);
+        if (key == 's') {
+            recording = true;
+        }
+        if (key == 'q') {
+            break;
+        }
+        if (key == 'r') {
+            current_idx = 0;
+            kinfu_.reset();
         }
     }
     scene_cloud_view_.show(kinfu_, true);
     const SceneCloudView &view = scene_cloud_view_;
-    if (view.point_colors_ptr_->points.empty()) // no colors
-    {
-        if (view.valid_combined_)
-            writeCloudFile(view.combined_ptr_);
-        else
-            writeCloudFile(view.cloud_ptr_);
-    } else {
-        if (view.valid_combined_)
-            writeCloudFile(merge<pcl::PointXYZRGBNormal>(*view.combined_ptr_, *view.point_colors_ptr_));
-        else
-            writeCloudFile(merge<pcl::PointXYZRGB>(*view.cloud_ptr_, *view.point_colors_ptr_));
-    }
+    pcl::io::savePLYFileASCII("/home/sliu/Dropbox/sync/mesh/cloud.ply",
+                              *merge<pcl::PointXYZRGB>(*view.cloud_ptr_, *view.point_colors_ptr_));
+
+    std::ofstream out(base_dir + "info.txt");
+    out << current_idx << std::endl;
+    out << width << " " << height << std::endl;
+    out << intrinsics_depth.fx << " " << intrinsics_depth.fy << " " << intrinsics_depth.ppx << " " << intrinsics_depth.ppy << std::endl;
 
     return 0;
 }

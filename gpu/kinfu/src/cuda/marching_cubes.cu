@@ -412,3 +412,36 @@ pcl::device::generateTriangles (const PtrStep<short2>& volume, const DeviceArray
   cudaSafeCall ( cudaGetLastError () );
   cudaSafeCall (cudaDeviceSynchronize ());
 }
+
+void
+pcl::device::generateTriangles (const PtrStep<short2>& volume, const PtrStep<short2>& color, const DeviceArray2D<int>& occupied_voxels, const float3& volume_size, DeviceArray<PointType>& output, DeviceArray<PointType>& color_output)
+{
+  int device;
+  cudaSafeCall( cudaGetDevice(&device) );
+
+  cudaDeviceProp prop;
+  cudaSafeCall( cudaGetDeviceProperties(&prop, device) );
+
+  int block_size = prop.major < 2 ? 96 : 256; // please see TrianglesGenerator::CTA_SIZE
+
+  using Tg = TrianglesGenerator;
+  Tg tg;
+
+  tg.volume = volume;
+  tg.occupied_voxels = occupied_voxels.ptr (0);
+  tg.vertex_ofssets = occupied_voxels.ptr (2);
+  tg.voxels_count = occupied_voxels.cols ();
+  tg.cell_size.x = volume_size.x / VOLUME_X;
+  tg.cell_size.y = volume_size.y / VOLUME_Y;
+  tg.cell_size.z = volume_size.z / VOLUME_Z;
+  tg.output = output;
+
+  int blocks_num = divUp (tg.voxels_count, block_size);
+
+  dim3 block (block_size);
+  dim3 grid(min(blocks_num, Tg::MAX_GRID_SIZE_X), divUp(blocks_num, Tg::MAX_GRID_SIZE_X));
+
+  trianglesGeneratorKernel<<<grid, block>>>(tg);
+  cudaSafeCall ( cudaGetLastError () );
+  cudaSafeCall (cudaDeviceSynchronize ());
+}

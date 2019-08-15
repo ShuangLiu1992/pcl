@@ -435,5 +435,8 @@ namespace pcl
       */
     void
     generateTriangles(const PtrStep<short2>& volume, const DeviceArray2D<int>& occupied_voxels, const float3& volume_size, DeviceArray<PointType>& output);
+
+    void
+    generateTriangles(const PtrStep<short2>& volume, const PtrStep<short2>& color, const DeviceArray2D<int>& occupied_voxels, const float3& volume_size, DeviceArray<PointType>& output, DeviceArray<PointType>& color_output);
   }
 }
