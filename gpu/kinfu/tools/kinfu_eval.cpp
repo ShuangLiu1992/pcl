@@ -239,7 +239,8 @@ int main(int argc, char *argv[]) {
     pcl::gpu::RayCaster::Ptr raycaster_ptr_;
 
     pcl::gpu::KinfuTracker::DepthMap generated_depth_;
-    while (evaluation_ptr_->grab(currentIndex, depth_, rgb24_)) {
+    // while (evaluation_ptr_->grab(currentIndex, depth_, rgb24_)) {
+    while (true) {
         rs2::frameset frames = pipe->wait_for_frames();
         // frames = align_to_depth.process(frames);
         frames = align_to_color.process(frames);
@@ -251,10 +252,15 @@ int main(int argc, char *argv[]) {
         cv::Mat rgb;
         cv::cvtColor(rgba, rgb, cv::COLOR_RGBA2RGB);
 
-        memcpy(const_cast<unsigned short *>(depth_.data), depth.get_data(),
-               depth.get_width() * depth.get_height() * sizeof(unsigned short));
-        memcpy(const_cast<pcl::gpu::KinfuTracker::PixelRGB *>(rgb24_.data), rgb.data,
-               color.get_width() * color.get_height() * sizeof(pcl::gpu::KinfuTracker::PixelRGB));
+        depth_.data = reinterpret_cast<unsigned short *>(const_cast<void *>(depth.get_data()));
+        depth_.cols = depth.get_width();
+        depth_.rows = depth.get_height();
+        depth_.step = depth.get_stride_in_bytes(); // 1280 = 640*2
+
+        rgb24_.data = reinterpret_cast<pcl::gpu::KinfuTracker::PixelRGB *>(rgb.data);
+        rgb24_.cols = color.get_width();
+        rgb24_.rows = color.get_height();
+        rgb24_.step = rgb.step1(); // 1280 = 640*2
 
         {
             const pcl::gpu::PtrStepSz<const unsigned short> &                  depth = depth_;
@@ -269,7 +275,7 @@ int main(int argc, char *argv[]) {
             kinfu_.getImage(view_device_);
 
             colors_device_.upload(rgb24.data, rgb24.step, rgb24.rows, rgb24.cols);
-            paint3DView(colors_device_, view_device_, 1);
+            paint3DView(colors_device_, view_device_, 0.5);
 
             int cols;
             view_device_.download(view_host_, cols);
