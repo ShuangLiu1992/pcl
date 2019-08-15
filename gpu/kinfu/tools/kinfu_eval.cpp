@@ -545,8 +545,6 @@ struct KinFuApp
   initRegistration ()
   {
     registration_ = true;
-    if (registration_)
-      kinfu_.setDepthIntrinsics(KINFU_DEFAULT_RGB_FOCAL_X, KINFU_DEFAULT_RGB_FOCAL_Y);
   }
 
   void
@@ -696,6 +694,7 @@ struct KinFuApp
     rs2_intrinsics intrinsics_depth = depth_stream_profile.get_intrinsics();
     rs2_intrinsics intrinsics_rgb = color_stream_profile.get_intrinsics();
     rs2_extrinsics rs_extrinsics = color_stream_profile.get_extrinsics_to(depth_stream_profile);
+    kinfu_.setDepthIntrinsics(intrinsics_depth.fx, intrinsics_depth.fy, intrinsics_depth.ppx, intrinsics_depth.ppy);
 
     {
       std::unique_lock<std::mutex> lock(data_ready_mutex_);
