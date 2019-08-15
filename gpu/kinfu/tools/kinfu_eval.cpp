@@ -741,7 +741,14 @@ int main(int argc, char *argv[]) {
     PtrStepSz<const unsigned short>         depth_;
     PtrStepSz<const KinfuTracker::PixelRGB> rgb24_;
 
-    SceneCloudView scene_cloud_view_;
+    SceneCloudView                      scene_cloud_view_;
+    KinfuTracker::View                  view_device_;
+    KinfuTracker::View                  colors_device_;
+    std::vector<KinfuTracker::PixelRGB> view_host_;
+
+    RayCaster::Ptr raycaster_ptr_;
+
+    KinfuTracker::DepthMap generated_depth_;
     while (evaluation_ptr_->grab(currentIndex, depth_, rgb24_)) {
         rs2::frameset frames = pipe->wait_for_frames();
         // frames = align_to_depth.process(frames);
@@ -766,11 +773,21 @@ int main(int argc, char *argv[]) {
             depth_device_.upload(depth.data, depth.step, depth.rows, depth.cols);
             image_view_.colors_device_.upload(rgb24.data, rgb24.step, rgb24.rows, rgb24.cols);
             has_image = kinfu_(depth_device_, image_view_.colors_device_);
-            image_view_.showDepth(depth);
+            //image_view_.showDepth(depth);
             // image_view_.showGeneratedDepth(kinfu_, kinfu_.getCameraPose());
 
             // scene_cloud_view_.showMesh(kinfu_, true);
             image_view_.showScene(kinfu_, rgb24, true, nullptr);
+            kinfu_.getImage(view_device_);
+
+            colors_device_.upload(rgb24.data, rgb24.step, rgb24.rows, rgb24.cols);
+            paint3DView(colors_device_, view_device_, 1);
+
+            int cols;
+            view_device_.download(view_host_, cols);
+            cv::Mat rgb(view_device_.rows(), view_device_.cols(), CV_8UC3, &view_host_[0]);
+            cv::imshow("rgb_image", rgb);
+            cv::waitKey(10);
         }
 
         currentIndex += 1;
