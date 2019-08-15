@@ -759,7 +759,7 @@ int main(int argc, char *argv[]) {
 
         cv::Mat rgba(color.get_height(), color.get_width(), CV_8UC4, (void *)color.get_data());
         cv::Mat rgb;
-        cv::cvtColor(rgba, rgb, cv::COLOR_RGBA2RGB);
+        cv::cvtColor(rgba, rgb, cv::COLOR_RGBA2BGR);
 
         memcpy(const_cast<unsigned short *>(depth_.data), depth.get_data(),
                depth.get_width() * depth.get_height() * sizeof(unsigned short));
@@ -767,17 +767,15 @@ int main(int argc, char *argv[]) {
                color.get_width() * color.get_height() * sizeof(KinfuTracker::PixelRGB));
 
         {
-            bool                                           has_image = false;
             const PtrStepSz<const unsigned short> &        depth     = depth_;
             const PtrStepSz<const KinfuTracker::PixelRGB> &rgb24     = rgb24_;
             depth_device_.upload(depth.data, depth.step, depth.rows, depth.cols);
             image_view_.colors_device_.upload(rgb24.data, rgb24.step, rgb24.rows, rgb24.cols);
-            has_image = kinfu_(depth_device_, image_view_.colors_device_);
+            kinfu_(depth_device_, image_view_.colors_device_);
             //image_view_.showDepth(depth);
             // image_view_.showGeneratedDepth(kinfu_, kinfu_.getCameraPose());
 
             // scene_cloud_view_.showMesh(kinfu_, true);
-            image_view_.showScene(kinfu_, rgb24, true, nullptr);
             kinfu_.getImage(view_device_);
 
             colors_device_.upload(rgb24.data, rgb24.step, rgb24.rows, rgb24.cols);
@@ -785,8 +783,8 @@ int main(int argc, char *argv[]) {
 
             int cols;
             view_device_.download(view_host_, cols);
-            cv::Mat rgb(view_device_.rows(), view_device_.cols(), CV_8UC3, &view_host_[0]);
-            cv::imshow("rgb_image", rgb);
+            cv::Mat rgbb(view_device_.rows(), view_device_.cols(), CV_8UC3, &view_host_[0]);
+            cv::imshow("rgb_image", rgbb);
             cv::waitKey(10);
         }
 
