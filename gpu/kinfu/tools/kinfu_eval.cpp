@@ -355,9 +355,7 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < total_frames; i++) {
         cv::Mat rgb   = cv::imread(base_dir + "c" + std::to_string(i) + ".png", cv::IMREAD_ANYCOLOR | cv::IMREAD_ANYDEPTH);
         cv::Mat depth = cv::imread(base_dir + "d" + std::to_string(i) + ".png", cv::IMREAD_ANYCOLOR | cv::IMREAD_ANYDEPTH);
-
-        std::cout << depth.step1() << std::endl;
-        std::cout << (depth.type() == CV_16U) << std::endl;
+        cv::cvtColor(rgb, rgb, cv::COLOR_BGR2RGB);
 
         depth_.data = reinterpret_cast<unsigned short *>(depth.data);
         depth_.cols = depth.cols;
@@ -375,10 +373,6 @@ int main(int argc, char *argv[]) {
             depth_device_.upload(depth.data, depth.step, depth.rows, depth.cols);
             image_view_.colors_device_.upload(rgb24.data, rgb24.step, rgb24.rows, rgb24.cols);
             kinfu_(depth_device_, image_view_.colors_device_);
-            // image_view_.showDepth(depth);
-            // image_view_.showGeneratedDepth(kinfu_, kinfu_.getCameraPose());
-
-            // scene_cloud_view_.showMesh(kinfu_, true);
             kinfu_.getImage(view_device_);
 
             colors_device_.upload(rgb24.data, rgb24.step, rgb24.rows, rgb24.cols);
