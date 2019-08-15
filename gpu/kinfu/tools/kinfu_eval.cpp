@@ -619,13 +619,6 @@ struct KinFuApp
   }
 
   void
-  initCurrentFrameView ()
-  {
-    current_frame_cloud_view_ = boost::shared_ptr<CurrentFrameCloudView>(new CurrentFrameCloudView ());
-    current_frame_cloud_view_->setViewerPose (kinfu_.getCameraPose ());
-  }
-
-  void
   initRegistration ()
   {
     registration_ = true;
@@ -732,9 +725,6 @@ struct KinFuApp
       image_view_.showScene (kinfu_, rgb24, registration_, independent_camera_ ? &viewer_pose : nullptr);
     }
 
-    if (current_frame_cloud_view_)
-      current_frame_cloud_view_->show (kinfu_);
-
     if (viz_ && !independent_camera_)
       setViewerPose (*scene_cloud_view_.cloud_viewer_, kinfu_.getCameraPose());
   }
@@ -816,20 +806,6 @@ struct KinFuApp
         scene_cloud_view_.cloud_viewer_->spinOnce (3);
         currentIndex += 1;
       }
-
-//      while (!exit_ && scene_view_not_stopped && image_view_not_stopped)
-//      {
-//        if (triggered_capture)
-//            capture_.start(); // Triggers new frame
-//        bool has_data = (data_ready_cond_.wait_for(lock, 100ms) == std::cv_status::no_timeout);
-//
-//        try { this->execute (depth_, rgb24_, has_data); }
-//        catch (const std::bad_alloc& /*e*/) { cout << "Bad alloc" << endl; break; }
-//        catch (const std::exception& /*e*/) { cout << "Exception" << endl; break; }
-//
-//        if (viz_)
-//            scene_cloud_view_.cloud_viewer_->spinOnce (3);
-//      }
     }
   }
 
@@ -872,29 +848,6 @@ struct KinFuApp
       writePolygonMeshFile(format, *scene_cloud_view_.mesh_ptr_);
   }
 
-  /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-  void
-  printHelp ()
-  {
-    cout << endl;
-    cout << "KinFu app hotkeys" << endl;
-    cout << "=================" << endl;
-    cout << "    H    : print this help" << endl;
-    cout << "   Esc   : exit" << endl;
-    cout << "    T    : take cloud" << endl;
-    cout << "    A    : take mesh" << endl;
-    cout << "    M    : toggle cloud exctraction mode" << endl;
-    cout << "    N    : toggle normals exctraction" << endl;
-    cout << "    I    : toggle independent camera mode" << endl;
-    cout << "    B    : toggle volume bounds" << endl;
-    cout << "    *    : toggle scene view painting ( requires registration mode )" << endl;
-    cout << "    C    : clear clouds" << endl;
-    cout << "   1,2,3 : save cloud to PCD(binary), PCD(ASCII), PLY(ASCII)" << endl;
-    cout << "    7,8  : save mesh to PLY, VTK" << endl;
-    cout << "   X, V  : TSDF volume utility" << endl;
-    cout << endl;
-  }
-
   bool exit_;
   bool scan_;
   bool scan_mesh_;
@@ -910,7 +863,6 @@ struct KinFuApp
 
   SceneCloudView scene_cloud_view_;
   ImageView image_view_;
-  boost::shared_ptr<CurrentFrameCloudView> current_frame_cloud_view_;
 
   KinfuTracker::DepthMap depth_device_;
 
