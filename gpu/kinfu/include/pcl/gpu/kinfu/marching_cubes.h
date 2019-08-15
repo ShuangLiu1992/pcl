@@ -81,6 +81,9 @@ namespace pcl
       DeviceArray<PointType> 
       run(const TsdfVolume& tsdf, DeviceArray<PointType>& triangles_buffer);
 
+      DeviceArray<pcl::PointXYZRGB>
+      run(const TsdfVolume& tsdf, const ColorVolume& color, DeviceArray<pcl::PointXYZRGB>& triangles_buffer);
+
     private:             
       /** \brief Edge table for marching cubes  */
       DeviceArray<int> edgeTable_;
