@@ -381,7 +381,7 @@ int main(int argc, char *argv[]) {
             int cols;
             view_device_.download(view_host_, cols);
             cv::Mat rgbb(view_device_.rows(), view_device_.cols(), CV_8UC3, &view_host_[0]);
-            cv::cvtColor(rgbb, rgbb, cv::COLOR_RGB2BGR);
+            cv::cvtColor(rgbb, rgbb, cv::COLOR_BGR2RGB);
             cv::imshow("rgb_image", rgbb);
             char key = cv::waitKey(10);
             if (key == 'q') {
