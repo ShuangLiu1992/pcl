@@ -280,6 +280,9 @@ int main(int argc, char *argv[]) {
             if (key == 'q') {
                 break;
             }
+            if (key == 'r') {
+                kinfu_.reset();
+            }
         }
 
         currentIndex += 1;
