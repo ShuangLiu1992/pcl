@@ -120,8 +120,8 @@ namespace pcl
     struct OccupiedVoxels : public CubeIndexEstimator
     {
       enum
-      {        
-        CTA_SIZE_X = 32,
+      {
+        CTA_SIZE_X = 8,
         CTA_SIZE_Y = 8,
         CTA_SIZE = CTA_SIZE_X * CTA_SIZE_Y,
 
@@ -213,7 +213,7 @@ namespace pcl
             blocks_done = 0;
             global_count = 0;
           }
-        } 
+        }
       } /* operator () */
     };
     __global__ void getOccupiedVoxelsKernel (const OccupiedVoxels ov) { ov (); }
@@ -272,7 +272,7 @@ namespace pcl
   {
     struct TrianglesGenerator : public CubeIndexEstimator
     {
-      enum { CTA_SIZE = 256, MAX_GRID_SIZE_X = 65536 };
+      enum { MAX_GRID_SIZE_X = 65536 };
 
       const int* occupied_voxels;
       const int* vertex_ofssets;
@@ -296,7 +296,7 @@ namespace pcl
 
       __device__ __forceinline__ float3
       vertex_interp (float3 p0, float3 p1, float f0, float f1) const
-      {        
+      {
         float t = (isoValue() - f0) / (f1 - f0 + 1e-15f);
         float x = p0.x + t * (p1.x - p0.x);
         float y = p0.y + t * (p1.y - p0.y);
@@ -308,8 +308,8 @@ namespace pcl
       operator () () const
       {
         int tid = threadIdx.x;
-        int idx = (blockIdx.y * MAX_GRID_SIZE_X + blockIdx.x) * CTA_SIZE + tid;
-      
+        int idx = (blockIdx.y * MAX_GRID_SIZE_X + blockIdx.x) * OccupiedVoxels::CTA_SIZE + tid;
+
 
         if (idx >= voxels_count)
           return;
@@ -336,7 +336,7 @@ namespace pcl
 
         // find the vertices where the surface intersects the cube
         // use shared memory to avoid using local
-        __shared__ float3 vertlist[12][CTA_SIZE];
+        __shared__ float3 vertlist[12][OccupiedVoxels::CTA_SIZE];
 
         vertlist[0][tid] = vertex_interp (v[0], v[1], f[0], f[1]);
         vertlist[1][tid] = vertex_interp (v[1], v[2], f[1], f[2]);
@@ -376,20 +376,132 @@ namespace pcl
     };
     __global__ void
     trianglesGeneratorKernel (const TrianglesGenerator tg) {tg (); }
+
+
+
+  struct TriangleColorsGenerator : public CubeIndexEstimator
+  {
+    enum { MAX_GRID_SIZE_X = 65536 };
+
+    const int* occupied_voxels;
+    const int* vertex_ofssets;
+    int voxels_count;
+    float3 cell_size;
+
+    PtrStep<short2> color_volume;
+
+    mutable PointType *output;
+    mutable PointType *color_output;
+
+    __device__ __forceinline__ float3
+    getNodeCoo (int x, int y, int z) const
+    {
+      float3 coo = make_float3 (x, y, z);
+      coo += 0.5f;                 //shift to volume cell center;
+
+      coo.x *= cell_size.x;
+      coo.y *= cell_size.y;
+      coo.z *= cell_size.z;
+
+      return coo;
+    }
+
+    __device__ __forceinline__ float3
+    vertex_interp (float3 p0, float3 p1, float f0, float f1) const
+    {
+      float t = (isoValue() - f0) / (f1 - f0 + 1e-15f);
+      float x = p0.x + t * (p1.x - p0.x);
+      float y = p0.y + t * (p1.y - p0.y);
+      float z = p0.z + t * (p1.z - p0.z);
+      return make_float3 (x, y, z);
+    }
+
+    __device__ __forceinline__ void
+    operator () () const
+    {
+      int tid = threadIdx.x;
+      int idx = (blockIdx.y * MAX_GRID_SIZE_X + blockIdx.x) * OccupiedVoxels::CTA_SIZE + tid;
+
+
+      if (idx >= voxels_count)
+        return;
+
+      int voxel = occupied_voxels[idx];
+
+      int z = voxel / (VOLUME_X * VOLUME_Y);
+      int y = (voxel - z * VOLUME_X * VOLUME_Y) / VOLUME_X;
+      int x = (voxel - z * VOLUME_X * VOLUME_Y) - y * VOLUME_X;
+
+      float f[8];
+      int cubeindex = computeCubeIndex (x, y, z, f);
+
+      // calculate cell vertex positions
+      float3 v[8];
+      v[0] = getNodeCoo (x, y, z);
+      v[1] = getNodeCoo (x + 1, y, z);
+      v[2] = getNodeCoo (x + 1, y + 1, z);
+      v[3] = getNodeCoo (x, y + 1, z);
+      v[4] = getNodeCoo (x, y, z + 1);
+      v[5] = getNodeCoo (x + 1, y, z + 1);
+      v[6] = getNodeCoo (x + 1, y + 1, z + 1);
+      v[7] = getNodeCoo (x, y + 1, z + 1);
+
+      // find the vertices where the surface intersects the cube
+      // use shared memory to avoid using local
+      __shared__ float3 vertlist[12][OccupiedVoxels::CTA_SIZE];
+
+      vertlist[0][tid] = vertex_interp (v[0], v[1], f[0], f[1]);
+      vertlist[1][tid] = vertex_interp (v[1], v[2], f[1], f[2]);
+      vertlist[2][tid] = vertex_interp (v[2], v[3], f[2], f[3]);
+      vertlist[3][tid] = vertex_interp (v[3], v[0], f[3], f[0]);
+      vertlist[4][tid] = vertex_interp (v[4], v[5], f[4], f[5]);
+      vertlist[5][tid] = vertex_interp (v[5], v[6], f[5], f[6]);
+      vertlist[6][tid] = vertex_interp (v[6], v[7], f[6], f[7]);
+      vertlist[7][tid] = vertex_interp (v[7], v[4], f[7], f[4]);
+      vertlist[8][tid] = vertex_interp (v[0], v[4], f[0], f[4]);
+      vertlist[9][tid] = vertex_interp (v[1], v[5], f[1], f[5]);
+      vertlist[10][tid] = vertex_interp (v[2], v[6], f[2], f[6]);
+      vertlist[11][tid] = vertex_interp (v[3], v[7], f[3], f[7]);
+      __syncthreads ();
+
+      // output triangle vertices
+      int numVerts = tex1Dfetch (numVertsTex, cubeindex);
+
+      for (int i = 0; i < numVerts; i += 3)
+      {
+        int index = vertex_ofssets[idx] + i;
+
+        int v1 = tex1Dfetch (triTex, (cubeindex * 16) + i + 0);
+        int v2 = tex1Dfetch (triTex, (cubeindex * 16) + i + 1);
+        int v3 = tex1Dfetch (triTex, (cubeindex * 16) + i + 2);
+
+        store_point (output, index + 0, vertlist[v1][tid]);
+        store_point (output, index + 1, vertlist[v2][tid]);
+        store_point (output, index + 2, vertlist[v3][tid]);
+      }
+    }
+
+    __device__ __forceinline__ void
+    store_point (float4 *ptr, int index, const float3& point) const {
+      ptr[index] = make_float4 (point.x, point.y, point.z, 1.0f);
+    }
+  };
+  __global__ void
+  trianglesColorsGeneratorKernel (const TriangleColorsGenerator tg) {tg (); }
   }
 }
 
 
 void
 pcl::device::generateTriangles (const PtrStep<short2>& volume, const DeviceArray2D<int>& occupied_voxels, const float3& volume_size, DeviceArray<PointType>& output)
-{   
+{
   int device;
   cudaSafeCall( cudaGetDevice(&device) );
 
   cudaDeviceProp prop;
   cudaSafeCall( cudaGetDeviceProperties(&prop, device) );
-  
-  int block_size = prop.major < 2 ? 96 : 256; // please see TrianglesGenerator::CTA_SIZE
+
+  int block_size = OccupiedVoxels::CTA_SIZE;
 
   using Tg = TrianglesGenerator;
   Tg tg;
@@ -422,9 +534,9 @@ pcl::device::generateTriangles (const PtrStep<short2>& volume, const PtrStep<sho
   cudaDeviceProp prop;
   cudaSafeCall( cudaGetDeviceProperties(&prop, device) );
 
-  int block_size = prop.major < 2 ? 96 : 256; // please see TrianglesGenerator::CTA_SIZE
+  int block_size = OccupiedVoxels::CTA_SIZE;
 
-  using Tg = TrianglesGenerator;
+  using Tg = TriangleColorsGenerator;
   Tg tg;
 
   tg.volume = volume;
@@ -441,7 +553,7 @@ pcl::device::generateTriangles (const PtrStep<short2>& volume, const PtrStep<sho
   dim3 block (block_size);
   dim3 grid(min(blocks_num, Tg::MAX_GRID_SIZE_X), divUp(blocks_num, Tg::MAX_GRID_SIZE_X));
 
-  trianglesGeneratorKernel<<<grid, block>>>(tg);
+  trianglesColorsGeneratorKernel<<<grid, block>>>(tg);
   cudaSafeCall ( cudaGetLastError () );
   cudaSafeCall (cudaDeviceSynchronize ());
 }

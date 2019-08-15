@@ -88,6 +88,8 @@ pcl::gpu::MarchingCubes::run(const TsdfVolume& tsdf, const ColorVolume& color, D
 {
   if (triangles_buffer.empty())
     triangles_buffer.create(DEFAULT_TRIANGLES_BUFFER_SIZE);
+  if (color_buffer.empty())
+    color_buffer.create(DEFAULT_TRIANGLES_BUFFER_SIZE);
   occupied_voxels_buffer_.create(3, static_cast<int> (triangles_buffer.size () / 3));
 
   device::bindTextures(edgeTable_, triTable_, numVertsTable_);
