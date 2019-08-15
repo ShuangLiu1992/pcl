@@ -9,7 +9,7 @@ set(srcs kinfu_eval.cpp capture.cpp evaluation.cpp)
 source_group("Source Files" FILES ${srcs})
 
 PCL_ADD_EXECUTABLE(${the_target} COMPONENT ${SUBSYS_NAME} SOURCES ${srcs} ${hdrs} BUNDLE)
-target_link_libraries("${the_target}" pcl_common pcl_io ${OPENNI_LIBRARIES} pcl_gpu_kinfu)
+target_link_libraries("${the_target}" pcl_io ${OPENNI_LIBRARIES} pcl_gpu_kinfu)
 
 find_package(OpenCV REQUIRED)
 if(OpenCV_FOUND)
