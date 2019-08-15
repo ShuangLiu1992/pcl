@@ -61,6 +61,34 @@ boost::shared_ptr<pcl::PolygonMesh> convertToMesh(const pcl::gpu::DeviceArray<pc
     }
     return mesh_ptr;
 }
+
+boost::shared_ptr<pcl::PolygonMesh> convertToMesh(const pcl::gpu::DeviceArray<pcl::PointXYZ> &triangles, const pcl::gpu::DeviceArray<pcl::PointXYZ> &colors) {
+    if (triangles.empty())
+        return boost::shared_ptr<pcl::PolygonMesh>();
+
+    pcl::PointCloud<pcl::PointXYZ> cloud;
+    cloud.width  = (int)triangles.size();
+    cloud.height = 1;
+    triangles.download(cloud.points);
+
+    pcl::PointCloud<pcl::PointXYZ> color;
+    color.width  = (int)colors.size();
+    color.height = 1;
+    colors.download(color.points);
+
+    boost::shared_ptr<pcl::PolygonMesh> mesh_ptr(new pcl::PolygonMesh());
+    pcl::toPCLPointCloud2(cloud, mesh_ptr->cloud);
+
+    mesh_ptr->polygons.resize(triangles.size() / 3);
+    for (size_t i = 0; i < mesh_ptr->polygons.size(); ++i) {
+        pcl::Vertices v;
+        v.vertices.push_back(i * 3 + 0);
+        v.vertices.push_back(i * 3 + 2);
+        v.vertices.push_back(i * 3 + 1);
+        mesh_ptr->polygons[i] = v;
+    }
+    return mesh_ptr;
+}
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 struct SceneCloudView {
@@ -112,7 +140,7 @@ struct SceneCloudView {
             marching_cubes_ = pcl::gpu::MarchingCubes::Ptr(new pcl::gpu::MarchingCubes());
 
         pcl::gpu::DeviceArray<pcl::PointXYZ> triangles_device = marching_cubes_->run(kinfu.volume(), kinfu.colorVolume(), triangles_buffer_device_, colors_buffer_device_);
-        mesh_ptr_                                             = convertToMesh(triangles_device);
+        mesh_ptr_                                             = convertToMesh(triangles_device, colors_buffer_device_);
     }
 
     int  extraction_mode_;
@@ -220,6 +248,49 @@ int main(int argc, char *argv[]) {
                               *merge<pcl::PointXYZRGB>(*view.cloud_ptr_, *view.point_colors_ptr_));
     scene_cloud_view_.showMesh(kinfu_, true);
     pcl::io::savePLYFile("/home/sliu/Dropbox/sync/mesh/mesh.ply", *view.mesh_ptr_);
+
+    pcl::PointCloud<pcl::PointXYZ> cloud;
+    cloud.width  = (int)view.triangles_buffer_device_.size();
+    cloud.height = 1;
+    view.triangles_buffer_device_.download(cloud.points);
+
+    int noTotalTriangles = view.triangles_buffer_device_.size() / 3;
+
+    std::ofstream stream("/home/sliu/test.ply");
+    stream << "ply"
+           << '\n' << "format "
+           << "binary_little_endian 1.0"
+           << '\n' << "element vertex " << noTotalTriangles * 3
+           << '\n' << "property float x"
+           << '\n' << "property float y"
+           << '\n' << "property float z"
+//           << '\n' << "property uchar red"
+//           << '\n' << "property uchar green"
+//           << '\n' << "property uchar blue"
+           << '\n' << "element face " << noTotalTriangles
+           << '\n' << "property list uchar int vertex_index"
+           << '\n' << "end_header" << std::endl;
+
+    for (uint i = 0; i < noTotalTriangles; i++)
+    {
+        stream.write( reinterpret_cast<const char*> ( &cloud.points[i * 3 + 0] ), sizeof( float ) * 3 );
+        //stream.write( reinterpret_cast<const char*> ( &triangleArray[i].c2 ), sizeof( Vector3u ) );
+        stream.write( reinterpret_cast<const char*> ( &cloud.points[i * 3 + 1] ), sizeof( float ) * 3 );
+        //stream.write( reinterpret_cast<const char*> ( &triangleArray[i].c1 ), sizeof( Vector3u ) );
+        stream.write( reinterpret_cast<const char*> ( &cloud.points[i * 3 + 2] ), sizeof( float ) * 3 );
+        //stream.write( reinterpret_cast<const char*> ( &triangleArray[i].c0 ), sizeof( Vector3u ) );
+
+    }
+    for (int i = 0; i < noTotalTriangles; i++)
+    {
+        uchar n = 3;
+        stream.write( reinterpret_cast<const char*> ( &n ), sizeof( uchar ) );
+        int f[3] = {i * 3 + 0, i * 3 + 1, i * 3 + 2};
+        stream.write( reinterpret_cast<const char*> ( &f[2] ), sizeof( int ) );
+        stream.write( reinterpret_cast<const char*> ( &f[1] ), sizeof( int ) );
+        stream.write( reinterpret_cast<const char*> ( &f[0] ), sizeof( int ) );
+
+    }
 
     return 0;
 }
