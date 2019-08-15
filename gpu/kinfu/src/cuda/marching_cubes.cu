@@ -121,7 +121,7 @@ namespace pcl
     {
       enum
       {
-        CTA_SIZE_X = 8,
+        CTA_SIZE_X = 32,
         CTA_SIZE_Y = 8,
         CTA_SIZE = CTA_SIZE_X * CTA_SIZE_Y,
 
@@ -388,7 +388,7 @@ namespace pcl
     int voxels_count;
     float3 cell_size;
 
-    PtrStep<short2> color_volume;
+    PtrStep<uchar4> color_volume;
 
     mutable PointType *output;
     mutable PointType *color_output;
@@ -402,6 +402,20 @@ namespace pcl
       coo.x *= cell_size.x;
       coo.y *= cell_size.y;
       coo.z *= cell_size.z;
+
+      return coo;
+    }
+
+    __device__ __forceinline__ float3
+    getNodeCol (int x, int y, int z) const
+    {
+      float3 coo;
+
+      int id = (x) + (y) * VOLUME_X + (z) * VOLUME_Y * VOLUME_X;
+
+      coo.x = color_volume[id].x / 255.f;
+      coo.y = color_volume[id].y / 255.f;
+      coo.z = color_volume[id].z / 255.f;
 
       return coo;
     }
@@ -462,6 +476,7 @@ namespace pcl
       vertlist[9][tid] = vertex_interp (v[1], v[5], f[1], f[5]);
       vertlist[10][tid] = vertex_interp (v[2], v[6], f[2], f[6]);
       vertlist[11][tid] = vertex_interp (v[3], v[7], f[3], f[7]);
+
       __syncthreads ();
 
       // output triangle vertices
@@ -478,6 +493,43 @@ namespace pcl
         store_point (output, index + 0, vertlist[v1][tid]);
         store_point (output, index + 1, vertlist[v2][tid]);
         store_point (output, index + 2, vertlist[v3][tid]);
+      }
+
+      v[0] = getNodeCol (x, y, z);
+      v[1] = getNodeCol (x + 1, y, z);
+      v[2] = getNodeCol (x + 1, y + 1, z);
+      v[3] = getNodeCol (x, y + 1, z);
+      v[4] = getNodeCol (x, y, z + 1);
+      v[5] = getNodeCol (x + 1, y, z + 1);
+      v[6] = getNodeCol (x + 1, y + 1, z + 1);
+      v[7] = getNodeCol (x, y + 1, z + 1);
+
+      vertlist[0][tid] = vertex_interp (v[0], v[1], f[0], f[1]);
+      vertlist[1][tid] = vertex_interp (v[1], v[2], f[1], f[2]);
+      vertlist[2][tid] = vertex_interp (v[2], v[3], f[2], f[3]);
+      vertlist[3][tid] = vertex_interp (v[3], v[0], f[3], f[0]);
+      vertlist[4][tid] = vertex_interp (v[4], v[5], f[4], f[5]);
+      vertlist[5][tid] = vertex_interp (v[5], v[6], f[5], f[6]);
+      vertlist[6][tid] = vertex_interp (v[6], v[7], f[6], f[7]);
+      vertlist[7][tid] = vertex_interp (v[7], v[4], f[7], f[4]);
+      vertlist[8][tid] = vertex_interp (v[0], v[4], f[0], f[4]);
+      vertlist[9][tid] = vertex_interp (v[1], v[5], f[1], f[5]);
+      vertlist[10][tid] = vertex_interp (v[2], v[6], f[2], f[6]);
+      vertlist[11][tid] = vertex_interp (v[3], v[7], f[3], f[7]);
+
+      __syncthreads ();
+
+      for (int i = 0; i < numVerts; i += 3)
+      {
+        int index = vertex_ofssets[idx] + i;
+
+        int v1 = tex1Dfetch (triTex, (cubeindex * 16) + i + 0);
+        int v2 = tex1Dfetch (triTex, (cubeindex * 16) + i + 1);
+        int v3 = tex1Dfetch (triTex, (cubeindex * 16) + i + 2);
+
+        store_point (color_output, index + 0, vertlist[v1][tid]);
+        store_point (color_output, index + 1, vertlist[v2][tid]);
+        store_point (color_output, index + 2, vertlist[v3][tid]);
       }
     }
 
@@ -526,7 +578,7 @@ pcl::device::generateTriangles (const PtrStep<short2>& volume, const DeviceArray
 }
 
 void
-pcl::device::generateTriangles (const PtrStep<short2>& volume, const PtrStep<short2>& color, const DeviceArray2D<int>& occupied_voxels, const float3& volume_size, DeviceArray<PointType>& output, DeviceArray<PointType>& color_output)
+pcl::device::generateTriangles (const PtrStep<short2>& volume, const PtrStep<uchar4>& color, const DeviceArray2D<int>& occupied_voxels, const float3& volume_size, DeviceArray<PointType>& output, DeviceArray<PointType>& color_output)
 {
   int device;
   cudaSafeCall( cudaGetDevice(&device) );
@@ -539,6 +591,7 @@ pcl::device::generateTriangles (const PtrStep<short2>& volume, const PtrStep<sho
   using Tg = TriangleColorsGenerator;
   Tg tg;
 
+  tg.color_volume = color;
   tg.volume = volume;
   tg.occupied_voxels = occupied_voxels.ptr (0);
   tg.vertex_ofssets = occupied_voxels.ptr (2);
@@ -547,6 +600,7 @@ pcl::device::generateTriangles (const PtrStep<short2>& volume, const PtrStep<sho
   tg.cell_size.y = volume_size.y / VOLUME_Y;
   tg.cell_size.z = volume_size.z / VOLUME_Z;
   tg.output = output;
+  tg.color_output = color_output;
 
   int blocks_num = divUp (tg.voxels_count, block_size);
 
