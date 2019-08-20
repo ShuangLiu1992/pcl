@@ -88,6 +88,32 @@ namespace pcl
       {
         unpack_tsdf (volume.ptr (VOLUME_Y * z + y)[x], tsdf, weight);
       }
+      __device__ __forceinline__ int
+      computeCubeIndex (int x, int y, int z, float f[8], int threshold) const
+      {
+        int weight;
+        readTsdf (x,     y,     z,     f[0], weight); if (weight < threshold) return 0;
+        readTsdf (x + 1, y,     z,     f[1], weight); if (weight < threshold) return 0;
+        readTsdf (x + 1, y + 1, z,     f[2], weight); if (weight < threshold) return 0;
+        readTsdf (x,     y + 1, z,     f[3], weight); if (weight < threshold) return 0;
+        readTsdf (x,     y,     z + 1, f[4], weight); if (weight < threshold) return 0;
+        readTsdf (x + 1, y,     z + 1, f[5], weight); if (weight < threshold) return 0;
+        readTsdf (x + 1, y + 1, z + 1, f[6], weight); if (weight < threshold) return 0;
+        readTsdf (x,     y + 1, z + 1, f[7], weight); if (weight < threshold) return 0;
+
+        // calculate flag indicating if each vertex is inside or outside isosurface
+        int cubeindex;
+        cubeindex = int(f[0] < isoValue());
+        cubeindex += int(f[1] < isoValue()) * 2;
+        cubeindex += int(f[2] < isoValue()) * 4;
+        cubeindex += int(f[3] < isoValue()) * 8;
+        cubeindex += int(f[4] < isoValue()) * 16;
+        cubeindex += int(f[5] < isoValue()) * 32;
+        cubeindex += int(f[6] < isoValue()) * 64;
+        cubeindex += int(f[7] < isoValue()) * 128;
+
+        return cubeindex;
+      }
 
       __device__ __forceinline__ int
       computeCubeIndex (int x, int y, int z, float f[8]) const
@@ -159,7 +185,7 @@ namespace pcl
           if (x + 1 < VOLUME_X && y + 1 < VOLUME_Y)
           {
             float field[8];
-            int cubeindex = computeCubeIndex (x, y, z, field);
+            int cubeindex = computeCubeIndex (x, y, z, field, 100);
 
             // read number of vertices from texture
             numVerts = (cubeindex == 0 || cubeindex == 255) ? 0 : tex1Dfetch (numVertsTex, cubeindex);
