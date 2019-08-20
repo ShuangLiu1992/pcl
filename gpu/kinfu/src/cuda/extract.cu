@@ -64,6 +64,7 @@ namespace pcl
     __shared__ float storage_X[CTA_SIZE * MAX_LOCAL_POINTS];
     __shared__ float storage_Y[CTA_SIZE * MAX_LOCAL_POINTS];
     __shared__ float storage_Z[CTA_SIZE * MAX_LOCAL_POINTS];
+  __shared__ float storage_W[CTA_SIZE * MAX_LOCAL_POINTS];
 
     struct FullScan6
     {
@@ -103,7 +104,7 @@ namespace pcl
 
         for (int z = 0; z < VOLUME_Z - 1; ++z)
         {
-          float3 points[MAX_LOCAL_POINTS];
+          float4 points[MAX_LOCAL_POINTS];
           int local_count = 0;
 
           if (x < VOLUME_X && y < VOLUME_Y)
@@ -124,7 +125,7 @@ namespace pcl
                 if (Wn != 0 && Fn != 1.f)
                   if ((F > 0 && Fn < 0) || (F < 0 && Fn > 0))
                   {
-                    float3 p;
+                    float4 p;
                     p.y = V.y;
                     p.z = V.z;
 
@@ -133,6 +134,7 @@ namespace pcl
                     float d_inv = 1.f / (std::abs (F) + std::abs (Fn));
                     p.x = (V.x * std::abs (Fn) + Vnx * std::abs (F)) * d_inv;
 
+                    p.w = Wn;
                     points[local_count++] = p;
                   }
               }               /* if (x + 1 < VOLUME_X) */
@@ -146,7 +148,7 @@ namespace pcl
                 if (Wn != 0 && Fn != 1.f)
                   if ((F > 0 && Fn < 0) || (F < 0 && Fn > 0))
                   {
-                    float3 p;
+                    float4 p;
                     p.x = V.x;
                     p.z = V.z;
 
@@ -155,6 +157,7 @@ namespace pcl
                     float d_inv = 1.f / (std::abs (F) + std::abs (Fn));
                     p.y = (V.y * std::abs (Fn) + Vny * std::abs (F)) * d_inv;
 
+                    p.w = Wn;
                     points[local_count++] = p;
                   }
               }                /*  if (y + 1 < VOLUME_Y) */
@@ -168,7 +171,7 @@ namespace pcl
                 if (Wn != 0 && Fn != 1.f)
                   if ((F > 0 && Fn < 0) || (F < 0 && Fn > 0))
                   {
-                    float3 p;
+                    float4 p;
                     p.x = V.x;
                     p.y = V.y;
 
@@ -177,6 +180,7 @@ namespace pcl
                     float d_inv = 1.f / (std::abs (F) + std::abs (Fn));
                     p.z = (V.z * std::abs (Fn) + Vnz * std::abs (F)) * d_inv;
 
+                    p.w = Wn;
                     points[local_count++] = p;
                   }
               }               /* if (z + 1 < VOLUME_Z) */
@@ -214,6 +218,7 @@ namespace pcl
               storage_X[storage_index + offset + l] = points[l].x;
               storage_Y[storage_index + offset + l] = points[l].y;
               storage_Z[storage_index + offset + l] = points[l].z;
+              storage_W[storage_index + offset + l] = points[l].w;
             }
 
             PointType *pos = output.data + old_global_count + lane;
@@ -222,7 +227,8 @@ namespace pcl
               float x = storage_X[storage_index + idx];
               float y = storage_Y[storage_index + idx];
               float z = storage_Z[storage_index + idx];
-              store_point_type (x, y, z, pos);
+              float w = storage_W[storage_index + idx];
+              store_point_type (x, y, z, w, pos);
             }
 
             bool full = (old_global_count + total_warp) >= output.size;
@@ -252,12 +258,8 @@ namespace pcl
       }       /* operator() */
 
       __device__ __forceinline__ void
-      store_point_type (float x, float y, float z, float4* ptr) const {
-        *ptr = make_float4 (x, y, z, 0);
-      }
-      __device__ __forceinline__ void
-      store_point_type (float x, float y, float z, float3* ptr) const {
-        *ptr = make_float3 (x, y, z);
+      store_point_type (float x, float y, float z, float w, float4* ptr) const {
+        *ptr = make_float4 (x, y, z, w);
       }
     };
 

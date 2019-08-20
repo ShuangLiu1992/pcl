@@ -252,7 +252,7 @@ namespace pcl
         v.z = __float2int_rd (p.z / cell_size.z);
 
         uchar4 rgbw = color_volume.ptr (VOLUME_Y * v.z + v.y)[v.x];
-        colors[idx] = make_uchar4 (rgbw.z, rgbw.y, rgbw.x, 0); //bgra
+        colors[idx] = make_uchar4 (rgbw.z, rgbw.y, rgbw.x, rgbw.w); //bgra
       }
     }
   }

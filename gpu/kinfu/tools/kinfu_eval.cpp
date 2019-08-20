@@ -19,83 +19,16 @@
 
 namespace pcl {
 namespace gpu {
-void paint3DView(const KinfuTracker::View &rgb24, KinfuTracker::View &view, float colors_weight = 0.5f);
 void mergePointNormal(const DeviceArray<PointXYZ> &cloud, const DeviceArray<Normal> &normals, DeviceArray<PointNormal> &output);
 } // namespace gpu
 } // namespace pcl
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename MergedT, typename PointT>
-typename pcl::PointCloud<MergedT>::Ptr merge(const pcl::PointCloud<PointT> &points, const pcl::PointCloud<pcl::RGB> &colors) {
-    typename pcl::PointCloud<MergedT>::Ptr merged_ptr(new pcl::PointCloud<MergedT>());
-
-    pcl::copyPointCloud(points, *merged_ptr);
-    for (size_t i = 0; i < colors.size(); ++i)
-        merged_ptr->points[i].rgba = colors.points[i].rgba;
-
-    return merged_ptr;
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-boost::shared_ptr<pcl::PolygonMesh> convertToMesh(const pcl::gpu::DeviceArray<pcl::PointXYZ> &triangles) {
-    if (triangles.empty())
-        return boost::shared_ptr<pcl::PolygonMesh>();
-
-    pcl::PointCloud<pcl::PointXYZ> cloud;
-    cloud.width  = (int)triangles.size();
-    cloud.height = 1;
-    triangles.download(cloud.points);
-
-    boost::shared_ptr<pcl::PolygonMesh> mesh_ptr(new pcl::PolygonMesh());
-    pcl::toPCLPointCloud2(cloud, mesh_ptr->cloud);
-
-    mesh_ptr->polygons.resize(triangles.size() / 3);
-    for (size_t i = 0; i < mesh_ptr->polygons.size(); ++i) {
-        pcl::Vertices v;
-        v.vertices.push_back(i * 3 + 0);
-        v.vertices.push_back(i * 3 + 2);
-        v.vertices.push_back(i * 3 + 1);
-        mesh_ptr->polygons[i] = v;
-    }
-    return mesh_ptr;
-}
-
-boost::shared_ptr<pcl::PolygonMesh> convertToMesh(const pcl::gpu::DeviceArray<pcl::PointXYZ> &triangles,
-                                                  const pcl::gpu::DeviceArray<pcl::PointXYZ> &colors) {
-    if (triangles.empty())
-        return boost::shared_ptr<pcl::PolygonMesh>();
-
-    pcl::PointCloud<pcl::PointXYZ> cloud;
-    cloud.width  = (int)triangles.size();
-    cloud.height = 1;
-    triangles.download(cloud.points);
-
-    pcl::PointCloud<pcl::PointXYZ> color;
-    color.width  = (int)colors.size();
-    color.height = 1;
-    colors.download(color.points);
-
-    boost::shared_ptr<pcl::PolygonMesh> mesh_ptr(new pcl::PolygonMesh());
-    pcl::toPCLPointCloud2(cloud, mesh_ptr->cloud);
-
-    mesh_ptr->polygons.resize(triangles.size() / 3);
-    for (size_t i = 0; i < mesh_ptr->polygons.size(); ++i) {
-        pcl::Vertices v;
-        v.vertices.push_back(i * 3 + 0);
-        v.vertices.push_back(i * 3 + 2);
-        v.vertices.push_back(i * 3 + 1);
-        mesh_ptr->polygons[i] = v;
-    }
-    return mesh_ptr;
-}
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 struct SceneCloudView {
     enum { GPU_Connected6 = 0, CPU_Connected6 = 1, CPU_Connected26 = 2 };
 
-    SceneCloudView() : extraction_mode_(GPU_Connected6), compute_normals_(false), valid_combined_(false) {
+    SceneCloudView() : extraction_mode_(GPU_Connected6), compute_normals_(true), valid_combined_(false) {
         cloud_ptr_        = pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>);
         normals_ptr_      = pcl::PointCloud<pcl::Normal>::Ptr(new pcl::PointCloud<pcl::Normal>);
         combined_ptr_     = pcl::PointCloud<pcl::PointNormal>::Ptr(new pcl::PointCloud<pcl::PointNormal>);
@@ -136,15 +69,6 @@ struct SceneCloudView {
         size_t points_size = valid_combined_ ? combined_ptr_->points.size() : cloud_ptr_->points.size();
     }
 
-    void showMesh(pcl::gpu::KinfuTracker &kinfu, bool /*integrate_colors*/) {
-        if (!marching_cubes_)
-            marching_cubes_ = pcl::gpu::MarchingCubes::Ptr(new pcl::gpu::MarchingCubes());
-
-        pcl::gpu::DeviceArray<pcl::PointXYZ> triangles_device =
-            marching_cubes_->run(kinfu.volume(), kinfu.colorVolume(), triangles_buffer_device_, colors_buffer_device_);
-        mesh_ptr_ = convertToMesh(triangles_device, colors_buffer_device_);
-    }
-
     int  extraction_mode_;
     bool compute_normals_;
     bool valid_combined_;
@@ -168,22 +92,38 @@ struct SceneCloudView {
     boost::shared_ptr<pcl::PolygonMesh> mesh_ptr_;
 };
 
-void save_dump(std::string output_path, unsigned int n_points, const pcl::PointCloud<pcl::PointXYZRGB> &cloud) {
+void save_dump(std::string output_path, unsigned int n_points, const pcl::PointCloud<pcl::PointNormal> &cloud,
+               const pcl::PointCloud<pcl::RGB> &colors) {
     std::ofstream stream(output_path, std::ios::binary);
+
+    int          threshold       = 120;
+    int          color_threshold = 1;
+    unsigned int valid_size      = 0;
+    for (uint i = 0; i < n_points; i++) {
+        if (cloud.points[i].data[3] > threshold && colors.points[i].a > color_threshold) {
+            valid_size++;
+        }
+    }
 
     stream.write(reinterpret_cast<const char *>(&n_points), sizeof(n_points));
 
     for (uint i = 0; i < n_points; i++) {
-        uchar co[3];
-        co[0] = cloud.points[i].r;
-        co[1] = cloud.points[i].g;
-        co[2] = cloud.points[i].b;
-        float po[3];
-        po[0] = cloud.points[i].x;
-        po[1] = cloud.points[i].y;
-        po[2] = cloud.points[i].z;
-        stream.write(reinterpret_cast<const char *>(po), sizeof(float) * 3);
-        stream.write(reinterpret_cast<const char *>(co), sizeof(uchar) * 3);
+        if (cloud.points[i].data[3] > threshold && colors.points[i].a > color_threshold) {
+            uchar co[3];
+            co[0] = colors.points[i].r;
+            co[1] = colors.points[i].g;
+            co[2] = colors.points[i].b;
+            float po[3];
+            po[0] = cloud.points[i].x;
+            po[1] = cloud.points[i].y;
+            po[2] = cloud.points[i].z;
+            stream.write(reinterpret_cast<const char *>(po), sizeof(float) * 3);
+            po[0] = cloud.points[i].normal_x;
+            po[1] = cloud.points[i].normal_y;
+            po[2] = cloud.points[i].normal_z;
+            stream.write(reinterpret_cast<const char *>(po), sizeof(float) * 3);
+            stream.write(reinterpret_cast<const char *>(co), sizeof(uchar) * 3);
+        }
     }
 }
 
@@ -247,7 +187,7 @@ int main(int argc, char *argv[]) {
             kinfu_.getImage(view_device_);
 
             colors_device_.upload(rgb24.data, rgb24.step, rgb24.rows, rgb24.cols);
-            paint3DView(colors_device_, view_device_, 0.5);
+            pcl::device::paint3DView(colors_device_, view_device_, 0.5);
 
             int cols;
             view_device_.download(view_host_, cols);
@@ -265,8 +205,8 @@ int main(int argc, char *argv[]) {
     }
 
     scene_cloud_view_.show(kinfu_, true);
-    auto point_cloud = *merge<pcl::PointXYZRGB>(*scene_cloud_view_.cloud_ptr_, *scene_cloud_view_.point_colors_ptr_);
-    save_dump("/home/sliu/Dropbox/sync/mesh/test.dump", point_cloud.size(), point_cloud);
+    save_dump("/home/sliu/Dropbox/sync/mesh/test.dump", scene_cloud_view_.combined_ptr_->size(), *scene_cloud_view_.combined_ptr_,
+              *scene_cloud_view_.point_colors_ptr_);
 
     return 0;
 }

@@ -387,6 +387,7 @@ namespace pcl
         o.x = p.x;
         o.y = p.y;
         o.z = p.z;
+        o.w = p.w;
 
         o.normal_x = n.x;
         o.normal_y = n.y;
