@@ -222,11 +222,11 @@ int main(int argc, char *argv[]) {
 
         cv::Mat rgba(color.get_height(), color.get_width(), CV_8UC4, (void *)color.get_data());
         cv::Mat rgb;
-        cv::cvtColor(rgba, rgb, cv::COLOR_RGBA2RGB);
+        cv::cvtColor(rgba, rgb, cv::COLOR_RGBA2BGR);
 
         cv::Mat rgba_mat(color.get_height(), color.get_width(), CV_8UC4, (void *)color.get_data());
         cv::Mat depth_map(depth.get_height(), depth.get_width(), CV_16U, (void *)depth.get_data());
-        cv::imshow("rgb", rgba_mat);
+        cv::imshow("rgb", rgb);
         cv::imshow("depth", depth_map);
 
         if (recording) {
@@ -235,6 +235,7 @@ int main(int argc, char *argv[]) {
             depth_.rows = depth.get_height();
             depth_.step = depth.get_stride_in_bytes(); // 1280 = 640*2
 
+            cv::cvtColor(rgb, rgb, cv::COLOR_BGR2RGB);
             rgb24_.data = reinterpret_cast<pcl::gpu::KinfuTracker::PixelRGB *>(rgb.data);
             rgb24_.cols = color.get_width();
             rgb24_.rows = color.get_height();
@@ -250,14 +251,9 @@ int main(int argc, char *argv[]) {
 
             int cols;
             view_device_.download(view_host_, cols);
-            cv::Mat rgbb(view_device_.rows(), view_device_.cols(), CV_8UC3, &view_host_[0]);
-            cv::cvtColor(rgbb, rgbb, cv::COLOR_RGB2BGR);
-            cv::imshow("rgb_image", rgbb);
-
-            cv::Mat rgb;
-            cv::cvtColor(rgba_mat, rgb, cv::COLOR_RGBA2RGB);
-            cv::imshow("rgb", rgba_mat);
-            cv::imshow("depth", depth_map);
+            cv::Mat rendering(view_device_.rows(), view_device_.cols(), CV_8UC3, &view_host_[0]);
+            cv::cvtColor(rendering, rendering, cv::COLOR_RGB2BGR);
+            cv::imshow("rendering", rendering);
 
             cv::cvtColor(rgb, rgb, cv::COLOR_RGB2BGR);
             cv::imwrite(base_dir + "c" + std::to_string(current_idx) + ".png", rgb);
@@ -285,6 +281,9 @@ int main(int argc, char *argv[]) {
     out << current_idx << std::endl;
     out << width << " " << height << std::endl;
     out << intrinsics_depth.fx << " " << intrinsics_depth.fy << " " << intrinsics_depth.ppx << " " << intrinsics_depth.ppy << std::endl;
+    std::cout << current_idx << std::endl;
+    std::cout << width << " " << height << std::endl;
+    std::cout << intrinsics_depth.fx << " " << intrinsics_depth.fy << " " << intrinsics_depth.ppx << " " << intrinsics_depth.ppy << std::endl;
 
     return 0;
 }

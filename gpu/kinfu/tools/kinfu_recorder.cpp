@@ -51,13 +51,12 @@ int main(int argc, char *argv[]) {
         cv::Mat depth_map(depth.get_height(), depth.get_width(), CV_16U, (void *)depth.get_data());
 
         cv::Mat rgb;
-        cv::cvtColor(rgba_mat, rgb, cv::COLOR_RGBA2RGB);
+        cv::cvtColor(rgba_mat, rgb, cv::COLOR_RGBA2BGR);
 
-        cv::imshow("rgb", rgba_mat);
+        cv::imshow("rgb", rgb);
         cv::imshow("depth", depth_map);
 
         if (recording) {
-            cv::cvtColor(rgb, rgb, cv::COLOR_RGB2BGR);
             cv::imwrite(base_dir + "c" + std::to_string(current_idx) + ".png", rgb);
             cv::imwrite(base_dir + "d" + std::to_string(current_idx) + ".png", depth_map);
             current_idx++;

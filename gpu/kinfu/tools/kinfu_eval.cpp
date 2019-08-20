@@ -168,28 +168,21 @@ struct SceneCloudView {
     boost::shared_ptr<pcl::PolygonMesh> mesh_ptr_;
 };
 
-void save_dump(std::string output_path, unsigned int n_triangles, const pcl::PointCloud<pcl::PointXYZ> &cloud,
-               const pcl::PointCloud<pcl::PointXYZ> &color) {
+void save_dump(std::string output_path, unsigned int n_points, const pcl::PointCloud<pcl::PointXYZRGB> &cloud) {
     std::ofstream stream(output_path, std::ios::binary);
 
-    stream.write(reinterpret_cast<const char *>(&n_triangles), sizeof(n_triangles));
+    stream.write(reinterpret_cast<const char *>(&n_points), sizeof(n_points));
 
-    for (uint i = 0; i < n_triangles; i++) {
+    for (uint i = 0; i < n_points; i++) {
         uchar co[3];
-        co[0] = color.points[i * 3 + 2].x * 255;
-        co[1] = color.points[i * 3 + 2].y * 255;
-        co[2] = color.points[i * 3 + 2].z * 255;
-        stream.write(reinterpret_cast<const char *>(&cloud.points[i * 3 + 2]), sizeof(float) * 3);
-        stream.write(reinterpret_cast<const char *>(co), sizeof(uchar) * 3);
-        co[0] = color.points[i * 3 + 1].x * 255;
-        co[1] = color.points[i * 3 + 1].y * 255;
-        co[2] = color.points[i * 3 + 1].z * 255;
-        stream.write(reinterpret_cast<const char *>(&cloud.points[i * 3 + 1]), sizeof(float) * 3);
-        stream.write(reinterpret_cast<const char *>(co), sizeof(uchar) * 3);
-        co[0] = color.points[i * 3 + 0].x * 255;
-        co[1] = color.points[i * 3 + 0].y * 255;
-        co[2] = color.points[i * 3 + 0].z * 255;
-        stream.write(reinterpret_cast<const char *>(&cloud.points[i * 3 + 0]), sizeof(float) * 3);
+        co[0] = cloud.points[i].r;
+        co[1] = cloud.points[i].g;
+        co[2] = cloud.points[i].b;
+        float po[3];
+        po[0] = cloud.points[i].x;
+        po[1] = cloud.points[i].y;
+        po[2] = cloud.points[i].z;
+        stream.write(reinterpret_cast<const char *>(po), sizeof(float) * 3);
         stream.write(reinterpret_cast<const char *>(co), sizeof(uchar) * 3);
     }
 }
@@ -270,74 +263,10 @@ int main(int argc, char *argv[]) {
             }
         }
     }
+
     scene_cloud_view_.show(kinfu_, true);
-    const SceneCloudView &view = scene_cloud_view_;
-    pcl::io::savePLYFileASCII("/home/sliu/Dropbox/sync/mesh/cloud.ply",
-                              *merge<pcl::PointXYZRGB>(*view.cloud_ptr_, *view.point_colors_ptr_));
-    scene_cloud_view_.showMesh(kinfu_, true);
-    pcl::io::savePLYFile("/home/sliu/Dropbox/sync/mesh/mesh.ply", *view.mesh_ptr_);
-
-    pcl::gpu::DeviceArray<pcl::PointXYZ> triangles_buffer_device_;
-    pcl::gpu::DeviceArray<pcl::PointXYZ> colors_buffer_device_;
-    pcl::gpu::DeviceArray<pcl::PointXYZ> triangles_device =
-        view.marching_cubes_->run(kinfu_.volume(), kinfu_.colorVolume(), triangles_buffer_device_, colors_buffer_device_);
-
-    pcl::PointCloud<pcl::PointXYZ> cloud;
-    cloud.width  = (int)triangles_device.size();
-    cloud.height = 1;
-    triangles_buffer_device_.download(cloud.points);
-    pcl::PointCloud<pcl::PointXYZ> color;
-    color.width  = (int)triangles_device.size();
-    color.height = 1;
-    colors_buffer_device_.download(color.points);
-
-    int noTotalTriangles = triangles_device.size() / 3;
-
-    std::ofstream stream("/home/sliu/test.ply");
-    stream << "ply" << '\n'
-           << "format "
-           << "binary_little_endian 1.0" << '\n'
-           << "element vertex " << noTotalTriangles * 3 << '\n'
-           << "property float x" << '\n'
-           << "property float y" << '\n'
-           << "property float z" << '\n'
-           << "property uchar red" << '\n'
-           << "property uchar green" << '\n'
-           << "property uchar blue" << '\n'
-           << "element face " << noTotalTriangles << '\n'
-           << "property list uchar int vertex_index" << '\n'
-           << "end_header" << std::endl;
-
-    std::cout << noTotalTriangles << std::endl;
-
-    for (uint i = 0; i < noTotalTriangles; i++) {
-        uchar co[3];
-        co[0] = color.points[i * 3 + 0].x * 255;
-        co[1] = color.points[i * 3 + 0].y * 255;
-        co[2] = color.points[i * 3 + 0].z * 255;
-        stream.write(reinterpret_cast<const char *>(&cloud.points[i * 3 + 0]), sizeof(float) * 3);
-        stream.write(reinterpret_cast<const char *>(co), sizeof(uchar) * 3);
-        co[0] = color.points[i * 3 + 1].x * 255;
-        co[1] = color.points[i * 3 + 1].y * 255;
-        co[2] = color.points[i * 3 + 1].z * 255;
-        stream.write(reinterpret_cast<const char *>(&cloud.points[i * 3 + 1]), sizeof(float) * 3);
-        stream.write(reinterpret_cast<const char *>(co), sizeof(uchar) * 3);
-        co[0] = color.points[i * 3 + 2].x * 255;
-        co[1] = color.points[i * 3 + 2].y * 255;
-        co[2] = color.points[i * 3 + 2].z * 255;
-        stream.write(reinterpret_cast<const char *>(&cloud.points[i * 3 + 2]), sizeof(float) * 3);
-        stream.write(reinterpret_cast<const char *>(co), sizeof(uchar) * 3);
-    }
-    for (int i = 0; i < noTotalTriangles; i++) {
-        uchar n = 3;
-        stream.write(reinterpret_cast<const char *>(&n), sizeof(uchar));
-        int f[3] = {i * 3 + 0, i * 3 + 1, i * 3 + 2};
-        stream.write(reinterpret_cast<const char *>(&f[2]), sizeof(int));
-        stream.write(reinterpret_cast<const char *>(&f[1]), sizeof(int));
-        stream.write(reinterpret_cast<const char *>(&f[0]), sizeof(int));
-    }
-
-    save_dump("/home/sliu/test.dump", noTotalTriangles, cloud, color);
+    auto point_cloud = *merge<pcl::PointXYZRGB>(*scene_cloud_view_.cloud_ptr_, *scene_cloud_view_.point_colors_ptr_);
+    save_dump("/home/sliu/Dropbox/sync/mesh/test.dump", point_cloud.size(), point_cloud);
 
     return 0;
 }
