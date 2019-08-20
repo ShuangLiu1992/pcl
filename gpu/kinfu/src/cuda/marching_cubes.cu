@@ -185,7 +185,7 @@ namespace pcl
           if (x + 1 < VOLUME_X && y + 1 < VOLUME_Y)
           {
             float field[8];
-            int cubeindex = computeCubeIndex (x, y, z, field, 100);
+            int cubeindex = computeCubeIndex (x, y, z, field, 1);
 
             // read number of vertices from texture
             numVerts = (cubeindex == 0 || cubeindex == 255) ? 0 : tex1Dfetch (numVertsTex, cubeindex);

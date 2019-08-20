@@ -167,6 +167,45 @@ void save_dump(std::string output_path, unsigned int n_points, const pcl::PointC
     }
 }
 
+void save_dump(std::string output_path, unsigned int n_points, const pcl::PointCloud<pcl::PointXYZ> &cloud,
+               const pcl::PointCloud<pcl::PointXYZ> &colors) {
+    std::ofstream stream(output_path, std::ios::binary);
+
+    n_points *= 3;
+    stream.write(reinterpret_cast<const char *>(&n_points), sizeof(n_points));
+
+    for (size_t i = 0; i < n_points / 3; i++) {
+        uchar co[3];
+        float po[3];
+        co[0] = colors.points[i * 3 + 2].x * 255;
+        co[1] = colors.points[i * 3 + 2].y * 255;
+        co[2] = colors.points[i * 3 + 2].z * 255;
+        po[0] = cloud.points[i * 3 + 2].x;
+        po[1] = cloud.points[i * 3 + 2].y;
+        po[2] = cloud.points[i * 3 + 2].z;
+        stream.write(reinterpret_cast<const char *>(po), sizeof(float) * 3);
+        stream.write(reinterpret_cast<const char *>(co), sizeof(uchar) * 3);
+
+        co[0] = colors.points[i * 3 + 1].x * 255;
+        co[1] = colors.points[i * 3 + 1].y * 255;
+        co[2] = colors.points[i * 3 + 1].z * 255;
+        po[0] = cloud.points[i * 3 + 1].x;
+        po[1] = cloud.points[i * 3 + 1].y;
+        po[2] = cloud.points[i * 3 + 1].z;
+        stream.write(reinterpret_cast<const char *>(po), sizeof(float) * 3);
+        stream.write(reinterpret_cast<const char *>(co), sizeof(uchar) * 3);
+
+        co[0] = colors.points[i * 3 + 0].x * 255;
+        co[1] = colors.points[i * 3 + 0].y * 255;
+        co[2] = colors.points[i * 3 + 0].z * 255;
+        po[0] = cloud.points[i * 3 + 0].x;
+        po[1] = cloud.points[i * 3 + 0].y;
+        po[2] = cloud.points[i * 3 + 0].z;
+        stream.write(reinterpret_cast<const char *>(po), sizeof(float) * 3);
+        stream.write(reinterpret_cast<const char *>(co), sizeof(uchar) * 3);
+    }
+}
+
 int main(int argc, char *argv[]) {
     std::string   base_dir = "/home/sliu/tmp/fusion/";
     std::ifstream in(base_dir + "info.txt");
@@ -311,6 +350,7 @@ int main(int argc, char *argv[]) {
 
     save_dump("/home/sliu/Dropbox/sync/mesh/test.dump", scene_cloud_view_.combined_ptr_->size(), *scene_cloud_view_.combined_ptr_,
               *scene_cloud_view_.point_colors_ptr_);
+    save_dump("/home/sliu/Dropbox/sync/mesh/mesh.dump", noTotalTriangles, cloud, color);
 
     return 0;
 }
