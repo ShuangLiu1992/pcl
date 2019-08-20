@@ -96,34 +96,36 @@ void save_dump(std::string output_path, unsigned int n_points, const pcl::PointC
                const pcl::PointCloud<pcl::RGB> &colors) {
     std::ofstream stream(output_path, std::ios::binary);
 
-    int          threshold       = 120;
-    int          color_threshold = 1;
-    unsigned int valid_size      = 0;
+    int                       threshold       = 120;
+    int                       color_threshold = 1;
+    std::vector<unsigned int> valid_list;
     for (uint i = 0; i < n_points; i++) {
         if (cloud.points[i].data[3] > threshold && colors.points[i].a > color_threshold) {
-            valid_size++;
+            if (!std::isnan(cloud.points[i].normal_x) && !std::isnan(cloud.points[i].normal_y) && !std::isnan(cloud.points[i].normal_z)) {
+                valid_list.push_back(i);
+            }
         }
     }
 
-    stream.write(reinterpret_cast<const char *>(&n_points), sizeof(n_points));
+    unsigned int valid_size = valid_list.size();
+    stream.write(reinterpret_cast<const char *>(&valid_size), sizeof(valid_size));
 
-    for (uint i = 0; i < n_points; i++) {
-        if (cloud.points[i].data[3] > threshold && colors.points[i].a > color_threshold) {
-            uchar co[3];
-            co[0] = colors.points[i].r;
-            co[1] = colors.points[i].g;
-            co[2] = colors.points[i].b;
-            float po[3];
-            po[0] = cloud.points[i].x;
-            po[1] = cloud.points[i].y;
-            po[2] = cloud.points[i].z;
-            stream.write(reinterpret_cast<const char *>(po), sizeof(float) * 3);
-            po[0] = cloud.points[i].normal_x;
-            po[1] = cloud.points[i].normal_y;
-            po[2] = cloud.points[i].normal_z;
-            stream.write(reinterpret_cast<const char *>(po), sizeof(float) * 3);
-            stream.write(reinterpret_cast<const char *>(co), sizeof(uchar) * 3);
-        }
+    for (size_t idx = 0; idx < valid_list.size(); idx++) {
+        size_t i = valid_list[idx];
+        uchar  co[3];
+        co[0] = colors.points[i].r;
+        co[1] = colors.points[i].g;
+        co[2] = colors.points[i].b;
+        float po[3];
+        po[0] = cloud.points[i].x;
+        po[1] = cloud.points[i].y;
+        po[2] = cloud.points[i].z;
+        stream.write(reinterpret_cast<const char *>(po), sizeof(float) * 3);
+        po[0] = cloud.points[i].normal_x;
+        po[1] = cloud.points[i].normal_y;
+        po[2] = cloud.points[i].normal_z;
+        stream.write(reinterpret_cast<const char *>(po), sizeof(float) * 3);
+        stream.write(reinterpret_cast<const char *>(co), sizeof(uchar) * 3);
     }
 }
 
