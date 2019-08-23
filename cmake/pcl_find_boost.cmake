@@ -22,6 +22,8 @@ set(Boost_ADDITIONAL_VERSIONS
 # Disable the config mode of find_package(Boost)
 set(Boost_NO_BOOST_CMAKE ON)
 
+set(BOOST_ROOT /home/sliu/projects/setup/ubuntu/build/install/Boost_Release)
+
 # Optional boost modules
 find_package(Boost 1.55.0 QUIET COMPONENTS serialization mpi)
 if(Boost_SERIALIZATION_FOUND)

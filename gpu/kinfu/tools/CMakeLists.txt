@@ -10,6 +10,7 @@ source_group("Source Files" FILES ${srcs})
 PCL_ADD_EXECUTABLE(${the_target} COMPONENT ${SUBSYS_NAME} SOURCES ${srcs} ${hdrs} BUNDLE)
 target_link_libraries("${the_target}" pcl_io ${OPENNI_LIBRARIES} pcl_gpu_kinfu)
 
+set(OpenCV_DIR /home/sliu/projects/setup/ubuntu/build/install/Release/lib/cmake/opencv4)
 find_package(OpenCV REQUIRED)
 if(OpenCV_FOUND)
   target_link_libraries("${the_target}" ${OpenCV_LIBS})
